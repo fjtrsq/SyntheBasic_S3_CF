@@ -212,13 +212,13 @@ void refreshValue(uint8_t page, uint8_t param){
                Serial.printf("OSC A WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[0]], WAVE_NAMES[oscWaveCacheEndType[0]]);
                Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_NAMES[oscWaveCacheEndType[1]]);
                break;
-      case 18: oscEndSelect = 0;
-               oscWaveformEnd[oscEndSelect] = (Waveform)roundf(value); 
+      case 18: oscWaveformEnd[0] = (Waveform)roundf(value);
+               drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, TFT_YELLOW); 
                leds.setColor(currentPage, RED);
                leds.show(); 
                break;
-      case 19: oscEndSelect = 1;
-               oscWaveformEnd[oscEndSelect] = (Waveform)roundf(value); 
+      case 19: oscWaveformEnd[1] = (Waveform)roundf(value);
+               drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, TFT_CYAN); 
                leds.setColor(currentPage, RED);
                leds.show();
                break;
@@ -500,12 +500,11 @@ void setPage(uint8_t page){
   else{
     switch(page){
       case 2:
-        syncActiveWaveCache(oscEndSelect, oscWaveformEnd[oscEndSelect], 1);
-        syncActiveWaveCache(!oscEndSelect, oscWaveformEnd[!oscEndSelect], 1);
-        syncActiveWaveCache(oscSelect, oscWaveform[oscSelect], 0);
-        syncActiveWaveCache(!oscSelect, oscWaveform[!oscSelect], 0);
-        drawWaveIcon(oscSelect);
-        drawWaveIcon(!oscSelect);
+        syncActiveWaveCache(0, oscWaveform[0], WAVE_START);
+        syncActiveWaveCache(1, oscWaveform[1], WAVE_START);
+        syncActiveWaveCache(0, oscWaveformEnd[0], WAVE_END);
+        syncActiveWaveCache(1, oscWaveformEnd[1], WAVE_END);
+        
         Serial.printf("OSC A WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[0]], WAVE_NAMES[oscWaveCacheEndType[0]]);
         Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_NAMES[oscWaveCacheEndType[1]]);
         leds.setColor(currentPage, GREEN);
@@ -517,8 +516,8 @@ void setPage(uint8_t page){
         presetInsertSelectedChar(true);
         setPresetStatus("CHAR OK", 800);
       case 8:
-        syncActiveWaveCache(oscSelect, oscWaveform[oscSelect], 0);
-        syncActiveWaveCache(!oscSelect, oscWaveform[!oscSelect], 0);
+        syncActiveWaveCache(0, oscWaveform[oscSelect], WAVE_START);
+        syncActiveWaveCache(1, oscWaveform[!oscSelect], WAVE_START);
         leds.setColor(currentPage, GREEN);
         leds.show();
       break;
@@ -577,19 +576,15 @@ void processControl(){
         case 6:
           
         break;
-
-        case 8:
-          leds.setColor(currentPage, RED);
-          leds.show();
-        break;
       
       }
       drawExtraValue();
     }
     else if(currentPage == ADSR_PARAM_PAGE){
       oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT - 1);
-      syncActiveWaveCache(oscSelect, oscWaveform[oscSelect], 0); 
-      drawWaveIcon(oscSelect);    
+      drawWaveAudioIcon(oscWaveform[oscSelect], 255, oscSelect ? 214 : 159, oscSelect ? TFT_CYAN : TFT_YELLOW); 
+      leds.setColor(currentPage, RED);
+      leds.show();
     }
   }
 
@@ -613,7 +608,6 @@ void processControl(){
   if ((millis() - lastDebounceTime) > debounceDelay) {
     if (botAz && !botAz_estable) {  
       oscSelect = 1;
-      drawSelectorOsc();
       if (currentPage == ADSR_PARAM_PAGE) for(byte i=0;i<8;i++) drawValue(i);
       drawMainVisualization();
       if (currentPage == 0) drawExtraValue();
@@ -630,7 +624,6 @@ void processControl(){
   if ((millis() - lastDebounceTime) > debounceDelay) {
     if (botAm && !botAm_estable) {
       oscSelect = 0;
-      drawSelectorOsc();
       if (currentPage == ADSR_PARAM_PAGE) for(byte i=0;i<8;i++) drawValue(i);
       drawMainVisualization();
       if (currentPage == 0) drawExtraValue();
@@ -744,7 +737,7 @@ void uint8ToBinaryStr(uint8_t num, char *buffer) {
 
 void drawExtraValue(){
   char buf[12] = "";
-  const int x = 90;
+  const int x = 5;
   const int y = 130;
   tft.setFreeFont(NUM_TEXT);
   tft.setTextDatum(TL_DATUM);
@@ -859,10 +852,10 @@ void drawADSR(){
 }
 
 void drawAudioWaveform(){
-  const int x = 6;
-  const int y = 161;
-  const int w = 233;
-  const int h = 78;
+  const int x = 5;
+  const int y = 160;
+  const int w = (currentPage == 2) ? 160 : 220;
+  const int h = 75;
   const int left = x + 2;//8
   const int right = x + w - 3;//236
   const int top = y + 4;//165
@@ -970,12 +963,24 @@ void drawPresetFileList(){
 void drawMainVisualization(){
   if (currentPage == ADSR_PARAM_PAGE) {
     drawADSR();
+    drawWaveAudioIcon(oscWaveform[0], 255, 159, TFT_YELLOW);
+    drawWaveAudioIcon(oscWaveform[1], 255, 214, TFT_CYAN);
   }
   else if (currentPage == FILE_PARAM_PAGE) {
     drawPresetFileList();
   }
+
+  else if (currentPage == 2){  //Morphing
+    drawAudioWaveform();
+    drawWaveAudioIcon(oscWaveform[0], 185, 159, TFT_YELLOW);
+    drawWaveAudioIcon(oscWaveform[1], 185, 214, TFT_CYAN);
+    drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, TFT_YELLOW);
+    drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, TFT_CYAN);
+  }
   else {
     drawAudioWaveform();
+    drawWaveAudioIcon(oscWaveform[0], 255, 159, TFT_YELLOW);
+    drawWaveAudioIcon(oscWaveform[1], 255, 214, TFT_CYAN);
   }
 }
 
@@ -1001,183 +1006,35 @@ void drawLabels(){
     if (!isSequencerScopedControl(currentPage, i)) continue;
     tft.drawString(getParamName(currentPage, i), 40 + ((i&3)*80), 5 + ((i>>2)*60));
   }
-  drawSelectorControl();
+  
 }
 
-void drawSelectorControl(){
-  tft.setFreeFont(LAB_TEXT);
-  tft.setTextDatum(TR_DATUM);
-  tft.setTextColor(TFT_GREEN);
-  tft.drawString(EXTRA_NAMES[currentPage], 80, 130);
-    
-  leds.setColor(ADSR_PARAM_PAGE, currentPage == ADSR_PARAM_PAGE ? GREEN : OFF);
-  leds.show();
-  Serial.printf("%s\n", currentPage == ADSR_PARAM_PAGE ? "ADSR" : "Control Extra");
-}
+void drawWaveAudioIcon(uint8_t idWave, int posX, int posY, uint16_t color) {
+  // Seguridad: Si el oscilador es inválido o el ID de onda supera el catálogo, salimos.
+  if (idWave < 0 || idWave >= WAVE_COUNT) return;
+  
+  // A. Limpiamos el lienzo del único Sprite antes de pintar la nueva onda
+  menuSprite.fillSprite(TFT_BLACK);
+  
+  int ultimoX = 0;
+  int ultimoY = cacheGraficaOndas[idWave][0];
+  
+  // B. Dibujamos la geometría dentro del Sprite leyendo la caché ultrarrápida
+  for (int x = 1; x < ICON_W; x++) {
+    int yPixel = cacheGraficaOndas[idWave][x];
+    menuSprite.drawLine(ultimoX, ultimoY, x, yPixel, color);
+    ultimoX = x;
+    ultimoY = yPixel;
+  }
 
-void drawSelectorOsc(){
+  // C. Estampamos el Sprite en la pantalla ST7789. 
+  // El Sprite se libera inmediatamente para poder ser reutilizado.
+  menuSprite.pushSprite(posX, posY);
+  // texto
   tft.setFreeFont(LAB_TEXT);
   tft.setTextDatum(TC_DATUM);
-  
-  tft.fillRect(250, oscSelect ? 196 : 141, 60, 16, TFT_BLACK);
-  if (oscSelect){
-      tft.setTextColor(TFT_CYAN);
-      tft.drawString(WAVE_NAMES[oscWaveform[1]], 280, 196);
-      tft.setTextColor(TFT_DARKGREY);
-      tft.drawString(WAVE_NAMES[oscWaveform[0]], 280, 141);
-  }
-  else{
-    tft.setTextColor(TFT_YELLOW);
-    tft.drawString(WAVE_NAMES[oscWaveform[0]], 280, 141);
-    tft.setTextColor(TFT_DARKGREY);
-    tft.drawString(WAVE_NAMES[oscWaveform[1]], 280, 196);
-  }
-  drawExtraValue();
-  SimpleColor color = oscSelect ? CYAN : YELLOW;
-  leds.setColor(9, color);
-  leds.show();
-  Serial.printf("%s\n", oscSelect ? "OSC 2" : "OSC 1");
-}
-
-void drawWaveIcon(uint8_t osc){
-  int x = 250;
-  int y = osc ? 214 : 159;
-  int w = 60;
-  int h = 25;
-
-  tft.fillRect(x, y-20, w+1, h+20, TFT_BLACK);
-  tft.drawRect(x-1, y-1, w+3, h+2, TFT_DARKGREY);
-
-  switch(oscWaveform[osc]) {
-    case WAVE_SAW: drawSawIcon(x,y,w,h,osc); break;
-    case WAVE_SINE: drawSineIcon(x,y,w,h,osc); break;
-    case WAVE_TRIANGLE: drawTriIcon(x,y,w,h,osc); break;
-    case WAVE_SQUARE: drawSquareIcon(x,y,w,h,osc); break;
-    case WAVE_PULSE: drawPulseIcon(x,y,w,h,osc); break;
-    case WAVE_SUPER: drawSuperIcon(x,y,w,h,osc); break;
-    case WAVE_ORGAN: drawOrganIcon(x,y,w,h,osc); break;
-    case WAVE_CRUSH: drawCrushIcon(x,y,w,h,osc); break;
-    case WAVE_NOISE: drawNoiseIcon(x,y,w,h,osc); break;
-    default: break;
-  }
-  drawSelectorOsc();
-}
-
-void drawSineIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  for(int i=0;i<w;i++)
-  {
-    float p = (float)i / w;
-    int yy = y + h/2 + sinf(p * TWO_PI) * (h/2 - 2);
-    tft.drawPixel(x+i, yy, color);
-  }
-}
-void drawSawIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  tft.drawLine(x, y+h, x+w, y+2, color);
-  tft.drawLine(x+w, y+2, x+w, y+h, color);
-}
-void drawSquareIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  int mid = x + w/2;
-
-  tft.drawLine(x+2, y+h-3, x+2, y+3, color);
-  tft.drawLine(x+2, y+2, mid, y+2, color);
-  tft.drawLine(mid, y+2, mid, y+h-3, color);
-  tft.drawLine(mid, y+h-3, x+w-2, y+h-3, color);
-}
-void drawTriIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  int mid = x + w/2;
-
-  tft.drawLine(x, y+h, mid, y+2, color);
-  tft.drawLine(mid, y+2, x+w, y+h, color);
-}
-void drawPulseIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  int hi = y + 4;
-  int lo = y + h - 3;
-  int rise = x + w / 4;
-  int fall = x + (w * 2) / 5;
-
-  tft.drawLine(x, lo, rise, lo, color);
-  tft.drawLine(rise, lo, rise, hi, color);
-  tft.drawLine(rise, hi, fall, hi, color);
-  tft.drawLine(fall, hi, fall, lo, color);
-  tft.drawLine(fall, lo, x + w, lo, color);
-}
-
-void drawSuperIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  int left = x;
-  int right = x + w;
-  int top = y + 4;
-  int bottom = y + h - 4;
-  int midY = y + h / 2;
-  int q1 = left + (right - left) / 3;
-  int q2 = left + ((right - left) * 2) / 3;
-
-  tft.drawLine(left, midY, q1, top, color);
-  tft.drawLine(q1, top, q2, bottom, color);
-  tft.drawLine(q2, bottom, right, midY, color);
-}
-void drawOrganIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  int base = y + h - 4;
-  int top = y + 5;
-  int left = x + 6;
-  int barW = 6;
-  int gap = 4;
-  int barHeights[5] = {h - 8, h - 12, h - 16, h - 10, h - 14};
-
-  for (int i = 0; i < 5; i++) {
-    int bx = left + i * (barW + gap);
-    int by = base - barHeights[i];
-    tft.drawRect(bx, by, barW, barHeights[i], color);
-  }
-}
-void drawCrushIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  int left = x + 4;
-  int right = x + w - 5;
-  int y1 = y + 5;
-  int y2 = y + h / 2 - 1;
-  int y3 = y + h - 5;
-  int s1 = left + (right - left) / 4;
-  int s2 = left + (right - left) / 2;
-  int s3 = left + ((right - left) * 3) / 4;
-
-  tft.drawLine(left, y2, s1, y2, color);
-  tft.drawLine(s1, y2, s1, y1, color);
-  tft.drawLine(s1, y1, s2, y1, color);
-  tft.drawLine(s2, y1, s2, y3, color);
-  tft.drawLine(s2, y3, s3, y3, color);
-  tft.drawLine(s3, y3, s3, y2, color);
-  tft.drawLine(s3, y2, right, y2, color);
-}
-void drawNoiseIcon(int x,int y,int w,int h,uint8_t osc){
-  uint16_t color = osc ?  TFT_CYAN : TFT_YELLOW;
-  static const int8_t noiseShape[] = {0, 6, -5, 4, -7, 3, -2, 7, -4, 5, -6, 2, -3, 6, -5, 4, -2, 5, -4, 3};
-  const int points = sizeof(noiseShape) / sizeof(noiseShape[0]);
-  const int xStart = x + 2;
-  const int xEnd = x + w - 3;
-  const int yCenter = y + h / 2;
-  const int amp = (h - 6) / 2;
-
-  int xPrev = xStart;
-  int yPrev = yCenter;
-
-  for (int i = 0; i < points; i++) {
-    int xCurr = xStart + ((xEnd - xStart) * i) / (points - 1);
-    int yCurr = yCenter + (noiseShape[i] * amp) / 8;
-
-    if (yCurr < y + 2) yCurr = y + 2;
-    if (yCurr > y + h - 2) yCurr = y + h - 2;
-
-    tft.drawLine(xPrev, yPrev, xCurr, yCurr, color);
-    xPrev = xCurr;
-    yPrev = yCurr;
-  }
+  tft.setTextColor(color);
+  tft.drawString(WAVE_NAMES[idWave], posX + 30, posY -19); 
 }
 
 void drawUI(){
@@ -1186,7 +1043,5 @@ void drawUI(){
     drawValue(i);
   }
   drawExtraValue(); 
-  drawWaveIcon(0); 
-  drawWaveIcon(1);
   drawMainVisualization();
 }

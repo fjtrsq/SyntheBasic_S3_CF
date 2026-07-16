@@ -96,67 +96,9 @@ volatile int16_t audioScopeBuffer[AUDIO_SCOPE_SAMPLES] = {0};
 volatile uint16_t audioScopeWriteIndex = 0;
 volatile uint32_t audioScopeSerial = 0;
 
-enum Waveform : uint8_t {
-  WAVE_SAW = 0,
-  WAVE_SINE,
-  WAVE_TRIANGLE,
-  WAVE_SQUARE,
-  WAVE_PULSE,
-  WAVE_SUPER,
-  WAVE_ORGAN,
-  WAVE_CRUSH,
-  WAVE_DRIVE,
-  WAVE_SINE_EXP,
-  WAVE_SAW_EXP,
-  WAVE_RECTIFIED,
-  WAVE_CHEBYSHEV,
-  WAVE_FM_1_1,
-  WAVE_FM_1_3,
-  WAVE_FM_1_4,
-  WAVE_FM_1_5,
-  WAVE_FM_FEEDBACK,
-  WAVE_VOCAL_AA,
-  WAVE_VOCAL_OO,
-  WAVE_HOLLOW,
-  WAVE_EVEN_HARM,
-  WAVE_PINCH,
-  WAVE_SINC,
-  WAVE_CHIRP,
-  WAVE_GRIT,
-  WAVE_TRI_INVERT,
-  WAVE_FRACTAL,
-  WAVE_WIERSTRASS,
-  WAVE_PLUCK,
-  WAVE_CLARINET,
-  WAVE_BELL_METAL,
-  WAVE_CELLO,
-  WAVE_PARABOLIC,
-  WAVE_TRAPEZOID,
-  WAVE_SOFT_TRI,
-  WAVE_FOLD_SAW,
-  WAVE_CROSS_MOD,
-  WAVE_COS_EXP,
-  WAVE_WARP,
-  WAVE_SINE_PWM,
-  WAVE_TB_HYBRID,
-  WAVE_SUB_HARM,
-  WAVE_BEAT,
-  WAVE_STEP_8BIT,
-  WAVE_HARD_SYNC,
-  WAVE_POLYNOMIAL,
-  WAVE_PSEUDO_NOISE,
-  WAVE_NOISE,
-  WAVE_COUNT
-};
 
-Preferences nvsPrefs;
-MemoryMode memoryMode = MEMORY_PSRAM;
-bool hardwareReset = false;
-uint16_t tableSize = TABLE_SIZE_DEFAULT;
-uint16_t tableMask = TABLE_SIZE_DEFAULT - 1;
-uint8_t tableBits = 11;
-uint8_t tableFracBits = 21;
-uint32_t tableFracMask = 0x001FFFFFUL;
+
+
 
 const uint8_t N_OSC = 2;
 const uint8_t ICON_W = 60;
@@ -304,7 +246,6 @@ FileParam filePageParams[PARAMS_PER_PAGE] = {
   {"POS", 0, 0, PN_LEN-1, 1, INT}, {"CHAR", 1, 0, 38, 1, CHARSEL},
 };
 
-const char* EXTRA_NAMES[] = {"", "LFO:", "OSCstart:", "Chorus:", "Chord:", "Sequencr:", "Mask:", "Preset:", "ADSR:"};
 const char* WAVE_NAMES[] = {"Saw", "Sine", "Tri", "Sqr", "Pulse", "SpSaw", "Organ", "Crush",
                             "Warm", "SinEx", "SawEx", "FlRct", "Chebs", "FMcla", "FMmet", 
                             "FMnoi", "FMcrp", "FMfdB", "Voc A", "Voc O", "Holow", "Harmo", 
@@ -341,6 +282,16 @@ enum ChordType : uint8_t {CHORD_MAJOR = 0,CHORD_MINOR,CHORD_SUS2,CHORD_SUS4,CHOR
 enum SequencerMode : uint8_t {SEQ_MODE_CHORD = 0,SEQ_MODE_ARP,SEQ_MODE_COUNT};
 enum SequencerState : uint8_t {SEQ_STATE_OFF = 0,SEQ_STATE_REC,SEQ_STATE_ON,SEQ_STATE_COUNT};
 enum MemoryMode : uint8_t {MEMORY_PSRAM = 0, MEMORY_INTERNAL = 1};
+enum WaveOrder : uint8_t {WAVE_START = 0, WAVE_END};
+
+Preferences nvsPrefs;
+MemoryMode memoryMode = MEMORY_PSRAM;
+bool hardwareReset = false;
+uint16_t tableSize = TABLE_SIZE_DEFAULT;
+uint16_t tableMask = TABLE_SIZE_DEFAULT - 1;
+uint8_t tableBits = 11;
+uint8_t tableFracBits = 21;
+uint32_t tableFracMask = 0x001FFFFFUL;
 
 
 struct Voice {
@@ -371,7 +322,7 @@ const float inv32768 = 1.0f / 32768.0f;
 
 uint8_t oscSelect = 0;
 uint8_t oscEndSelect = 0;
-float varPulse = 0.2f;
+
 float detuneAmount = 0.01f;  // 1% inicial
 float oscMix = 0.5f;        // mezcla entre osc0 y osc1
 
@@ -614,7 +565,6 @@ void limitReleaseVoices(uint8_t maxReleaseVoices) {
 }
 
 int16_t readWaveSample(uint8_t osc, uint32_t index, uint32_t frac){
-  //if (oscWaveform[osc] == WAVE_NOISE) { return (int16_t)random(-32768, 32767);}
   int16_t* table = oscWaveCache[osc];
   int16_t a = table[index];
   int16_t b = table[(index + 1) & tableMask];
@@ -622,11 +572,6 @@ int16_t readWaveSample(uint8_t osc, uint32_t index, uint32_t frac){
 }
 
 float readWaveSampleMorph(uint8_t osc, uint32_t index, uint32_t frac, float morphVal) {
-  // Si el oscilador está en modo ruido, no tiene sentido hacer morphing geométrico
-  if (oscWaveform[osc] == WAVE_NOISE) {
-    return (float)random(-32768, 32767) * inv32768;
-  }
-
   // Apuntamos a las dos tablas en RAM asignadas a este oscilador de la voz 'v'
   int16_t* tableStart = oscWaveCache[osc];
   int16_t* tableEnd   = oscWaveCacheEnd[osc];
@@ -782,7 +727,7 @@ void updateTableAddressingConstants() {
 bool allocateWaveTables() {
   const size_t tableBytes = tableSize * sizeof(int16_t);
 
-  for (uint8_t wave = WAVE_SAW; wave < WAVE_NOISE; wave++) {
+  for (uint8_t wave = WAVE_SAW; wave < WAVE_COUNT; wave++) {
     waveformCatalog[wave] = (int16_t*)heap_caps_malloc(tableBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (waveformCatalog[wave] == nullptr) {
       waveformCatalog[wave] = (int16_t*)heap_caps_malloc(tableBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -795,6 +740,8 @@ bool allocateWaveTables() {
     if (waveformCatalog[wave] == nullptr) return false;
   }
 
+  Serial.println("Allocate waveformCatalog");
+
   for (uint8_t osc = 0; osc < N_OSC; osc++) {
     oscWaveCache[osc] = (int16_t*)heap_caps_malloc(tableBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     oscWaveCacheEnd[osc] = (int16_t*)heap_caps_malloc(tableBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -806,10 +753,10 @@ bool allocateWaveTables() {
   return true;
 }
 
-void syncActiveWaveCache(uint8_t osc, Waveform wave, uint8_t end) {
+void syncActiveWaveCache(uint8_t osc, Waveform wave, WaveOrder tipo) {
   //osc = 0 || 1 Normal wave or start Wave; 2 || 3 End Wave
-  if (osc > 1 || wave >= WAVE_NOISE) return;
-  if(!end){
+  if (osc > 1 || wave >= WAVE_COUNT) return;
+  if(tipo == WAVE_START){
     if (oscWaveCache[osc] == nullptr || waveformCatalog[wave] == nullptr) return;
     if (oscWaveCacheType[osc] == wave) return;
     //if (pendingWaveUpdate && (millis() - waveEncoderMoveTime > WAVE_UPDATE_DELAY)) {
@@ -839,8 +786,8 @@ bool initAudioMemory() {
   if (!allocateWaveTables()) return false;
   if (!allocateAudioBuffer(&modDelayBuffer, MOD_DELAY_BUFFER_SIZE, "modDelayBuffer")) return false;
   
-  size_t totalBytes = (size_t)MOD_DELAY_BUFFER_SIZE + (size_t)(WAVE_NOISE * tableSize  * sizeof(int16_t));                           
-  totalBytes += (size_t)(WAVE_NOISE * tableSize  * sizeof(int16_t));
+  size_t totalBytes = (size_t)MOD_DELAY_BUFFER_SIZE;                           
+  totalBytes += (size_t)(WAVE_COUNT * tableSize  * sizeof(int16_t));
   Serial.printf("[MEM] Reserva audio+tablas: %u bytes (%.2f MB)\n", (unsigned int)totalBytes, totalBytes / (1024.0f * 1024.0f));
   return true;
 }
@@ -854,218 +801,82 @@ void regeneratePulseTable(float var){
   for(byte n=0;n<N_OSC;n++){
     if(oscWaveform[n] == WAVE_PULSE) {
       oscWaveCacheType[n] = WAVE_COUNT;
-      syncActiveWaveCache(n, WAVE_PULSE, 0);
+      syncActiveWaveCache(n, WAVE_PULSE, WAVE_START);
     }
   }
   for(byte n=0;n<N_OSC;n++){
     if(oscWaveformEnd[n] == WAVE_PULSE) {
       oscWaveCacheEndType[n] = WAVE_COUNT;
-      syncActiveWaveCache(n, WAVE_PULSE, 1);
+      syncActiveWaveCache(n, WAVE_PULSE, WAVE_END);
     }
   }
 }
 
-void generateWaveTables() {
-  for (int i = 0; i < tableSize ; i++) {
-    float phase = (float)i / tableSize ;
-
-    float saw = (2.0f * phase) - 1.0f;
-    waveformCatalog[WAVE_SAW][i] = (int16_t)(constrain(saw, -1.0f, 1.0f) * 32767.0f);
-
-    float sine = sinf(2.0f * PI * phase);
-    waveformCatalog[WAVE_SINE][i] = (int16_t)(constrain(sine, -1.0f, 1.0f) * 32767.0f);
-
-    float triangle = 4.0f * fabsf(phase - 0.5f) - 1.0f;
-    waveformCatalog[WAVE_TRIANGLE][i] = (int16_t)(constrain(triangle, -1.0f, 1.0f) * 32767.0f);
-
-    float square = (phase < 0.5f) ? 1.0f : -1.0f;
-    waveformCatalog[WAVE_SQUARE][i] = (int16_t)(constrain(square, -1.0f, 1.0f) * 32767.0f);
-
-    float pulse = (phase < varPulse) ? 1.0f : -1.0f; // 20% duty
-    waveformCatalog[WAVE_PULSE][i] = (int16_t)(constrain(pulse, -1.0f, 1.0f) * 32767.0f);
-
-    float super = (0.60f * saw)
-                + (0.25f * sinf((2.0f * PI * phase) + 0.12f))
-                + (0.15f * sinf((2.0f * PI * phase * 2.0f) - 0.07f));
-    waveformCatalog[WAVE_SUPER][i] = (int16_t)(constrain(super, -1.0f, 1.0f) * 32767.0f);
-
-    float organ = (sine + 0.50f * sinf(2.0f * PI * phase * 2.0f) + 0.30f * sinf(2.0f * PI * phase * 3.0f)) / 1.8f;
-    waveformCatalog[WAVE_ORGAN][i] = (int16_t)(constrain(organ, -1.0f, 1.0f) * 32767.0f);
-
-    float crush = roundf(sine * 6.0f) / 6.0f;
-    waveformCatalog[WAVE_CRUSH][i] = (int16_t)(constrain(crush, -1.0f, 1.0f) * 32767.0f);
-
-    // 1. Seno Saturado (Cálido, estilo distorsión de válvulas)
-    float warm_drive = tanhf(2.5f * sine) / tanhf(2.5f);
-    waveformCatalog[WAVE_DRIVE][i] = (int16_t)(constrain(warm_drive, -1.0f, 1.0f) * 32767.0f);
-
-    // 2. Seno Exponencial (Armónicos impares muy agresivos)
-    float sine_exp = (sine >= 0.0f ? 1.0f : -1.0f) * (1.0f - expf(-4.0f * fabsf(sine)));
-    waveformCatalog[WAVE_SINE_EXP][i] = (int16_t)(constrain(sine_exp, -1.0f, 1.0f) * 32767.0f);
-
-    // 3. Sierra Exponencial (Ataque agresivo y decaimiento curvo, ideal para "plucks")
-    float saw_exp = (-1.0f + 2.0f * (1.0f - expf(-3.0f * phase)) / (1.0f - expf(-3.0f)));
-    waveformCatalog[WAVE_SAW_EXP][i] = (int16_t)(constrain(saw_exp, -1.0f, 1.0f) * 32767.0f);
-
-    // 4. Rectificación de Onda Completa (Sube el tono una octava de forma distorsionada)
-    float full_rect = (fabsf(sine) * 2.0f) - 1.0f;
-    waveformCatalog[WAVE_RECTIFIED][i] = (int16_t)(constrain(full_rect, -1.0f, 1.0f) * 32767.0f);
-
-    // 5. Polinomio de Chebyshev (Genera un armónico puro de 4ª orden sin usar senos extras)
-    float chebyshev4 = 8.0f * powf(sine, 4.0f) - 8.0f * (sine * sine) + 1.0f;
-    waveformCatalog[WAVE_CHEBYSHEV][i] = (int16_t)(constrain(chebyshev4, -1.0f, 1.0f) * 32767.0f);
-
-    // 6. FM Clásica 1:1 (Sonido de campana/órgano eléctrico básico)
-    float fm_1_1 = sinf(2.0f * PI * phase + 1.0f * sinf(2.0f * PI * phase));
-    waveformCatalog[WAVE_FM_1_1][i] = (int16_t)(constrain(fm_1_1, -1.0f, 1.0f) * 32767.0f);
-
-    // 7. FM Metálica 1:3 (Tono de campana de metal o campana tubular)
-    float fm_1_3 = sinf(2.0f * PI * phase + 1.5f * sinf(2.0f * PI * phase * 3.0f));
-    waveformCatalog[WAVE_FM_1_3][i] = (int16_t)(constrain(fm_1_3, -1.0f, 1.0f) * 32767.0f);
-
-    // 8. FM Agresiva 1:4 (Sonido industrial, ruidoso e inarmónico)
-    float fm_1_4 = sinf(2.0f * PI * phase + 2.0f * sinf(2.0f * PI * phase * 4.0f));
-    waveformCatalog[WAVE_FM_1_4][i] = (int16_t)(constrain(fm_1_4, -1.0f, 1.0f) * 32767.0f);
-
-    // 9. Automodulación FM (Genera una sierra matemática muy brillante y limpia)
-    float fm_feedback = sinf(2.0f * PI * phase + 0.8f * sine);
-    waveformCatalog[WAVE_FM_FEEDBACK][i] = (int16_t)(constrain(fm_feedback, -1.0f, 1.0f) * 32767.0f);
-
-    // 10. Pseudo-Vocal "AA" (Filtro de formante fijo imitando la voz humana)
-    float vocal_aa = (sine + 0.8f * sinf(2.0f * PI * phase * 3.0f) + 0.4f * sinf(2.0f * PI * phase * 5.0f)) / 2.2f;
-    waveformCatalog[WAVE_VOCAL_AA][i] = (int16_t)(constrain(vocal_aa, -1.0f, 1.0f) * 32767.0f);
-
-    // 11. Pseudo-Vocal "OO" (Formante más cerrado y oscuro)
-    float vocal_oo = (sine + 0.6f * sinf(2.0f * PI * phase * 2.0f) + 0.1f * sinf(2.0f * PI * phase * 3.0f)) / 1.7f;
-    waveformCatalog[WAVE_VOCAL_OO][i] = (int16_t)(constrain(vocal_oo, -1.0f, 1.0f) * 32767.0f);
-
-    // 12. Onda Hueca / "Hollow" (Solo armónicos impares, textura similar al clarinete)
-    float hollow = (sine + 0.33f * sinf(2.0f * PI * phase * 3.0f) + 0.2f * sinf(2.0f * PI * phase * 5.0f)) / 1.53f;
-    waveformCatalog[WAVE_HOLLOW][i] = (int16_t)(constrain(hollow, -1.0f, 1.0f) * 32767.0f);
-
-    // 13. Súper Armónicos Pares (Suena extremadamente brillante, una octava por encima)
-    float even_harmonics = (sinf(2.0f * PI * phase * 2.0f) + 0.5f * sinf(2.0f * PI * phase * 4.0f) + 0.25f * sinf(2.0f * PI * phase * 6.0f)) / 1.75f;
-    waveformCatalog[WAVE_EVEN_HARM][i] = (int16_t)(constrain(even_harmonics, -1.0f, 1.0f) * 32767.0f);
-
-    // 14. Phase Pinch (Deforma el tiempo; suave al inicio, hiper-frecuente al final)
-    float phase_pinch = sinf(2.0f * PI * powf(phase, 1.7f));
-    waveformCatalog[WAVE_PINCH][i] = (int16_t)(constrain(phase_pinch, -1.0f, 1.0f) * 32767.0f);
-
-    // 15. Sinc Pulse / Función Espectral (Produce pulsos agudos aislados de alta fidelidad)
-    float sync_offset = (phase - 0.5f) * 15.0f; // Multiplicador controla el número de anillos
-    float sinc_pulse = (fabsf(sync_offset) < 0.0001f) ? 1.0f : sinf(sync_offset) / sync_offset;
-    waveformCatalog[WAVE_SINC][i] = (int16_t)(constrain(sinc_pulse, -1.0f, 1.0f) * 32767.0f);
-
-    // 16. Onda Chirp (La frecuencia se duplica progresivamente a lo largo del ciclo)
-    float chirp = sinf(2.0f * PI * phase * (1.0f + phase));
-    waveformCatalog[WAVE_CHIRP][i] = (int16_t)(constrain(chirp, -1.0f, 1.0f) * 32767.0f);
-
-    // 17. Seno partido en ventanas (Grit / Modulación por Anillo Interna)
-    float grit = sine * (sinf(2.0f * PI * phase * 5.0f) > 0.0f ? 1.0f : -1.0f);
-    waveformCatalog[WAVE_GRIT][i] = (int16_t)(constrain(grit, -1.0f, 1.0f) * 32767.0f);
-
-    // 18. Triángulo Invertido Absoluto (Corta la onda por la mitad generando picos duros)
-    float tri_invert = 1.0f - 2.0f * fabsf(triangle);
-    waveformCatalog[WAVE_TRI_INVERT][i] = (int16_t)(constrain(tri_invert, -1.0f, 1.0f) * 32767.0f);
-
-    // 19. Fractal por Módulo (Multi-rampa matemática agresiva tipo glitch)
-    float fractal_mod = -1.0f + 2.0f * fmodf(phase * 4.0f, 1.0f);
-    waveformCatalog[WAVE_FRACTAL][i] = (int16_t)(constrain(fractal_mod, -1.0f, 1.0f) * 32767.0f);
-
-    // 20. Micro-Ruido Fractal (Onda Weierstrass simplificada, textura arenosa/industrial)
-    float noise_fractal = (sine + 0.5f * cosf(2.0f * PI * phase * 3.0f) + 0.25f * sinf(2.0f * PI * phase * 9.0f)) / 1.75f;
-    waveformCatalog[WAVE_WIERSTRASS][i] = (int16_t)(constrain(noise_fractal, -1.0f, 1.0f) * 32767.0f);
-
-    // 21. Cuerda Pulsada Exponencial (Ataque ultra rápido y decaimiento no lineal)
-    float string_pluck = saw * expf(-2.0f * phase);
-    waveformCatalog[WAVE_PLUCK][i] = (int16_t)(constrain(string_pluck, -1.0f, 1.0f) * 32767.0f);
-
-    // 22. Clarinete / Viento Madera (Predominio extremo de armónicos impares con rampa suave)
-    float clarinet = (sine + 0.5f * sinf(2.0f * PI * phase * 3.0f) + 0.25f * sinf(2.0f * PI * phase * 5.0f)) * (1.0f - phase);
-    waveformCatalog[WAVE_CLARINET][i] = (int16_t)(constrain(clarinet, -1.0f, 1.0f) * 32767.0f);
-
-    // 23. Metal Resonante / Campana Tibetana (Inarmónicos densos que simulan resonancia metálica)
-    float bell_metal = (sine + 0.7f * sinf(2.0f * PI * phase * 2.71f) + 0.4f * sinf(2.0f * PI * phase * 5.43f)) / 2.1f;
-    waveformCatalog[WAVE_BELL_METAL][i] = (int16_t)(constrain(bell_metal, -1.0f, 1.0f) * 32767.0f);
-
-    // 24. Pseudo-Cello (Combinación aditiva asimétrica que imita el frotado de una cuerda)
-    float cello = (saw + 0.5f * sinf(2.0f * PI * phase) + 0.25f * cosf(2.0f * PI * phase * 2.0f)) / 1.75f;
-    waveformCatalog[WAVE_CELLO][i] = (int16_t)(constrain(cello, -1.0f, 1.0f) * 32767.0f);
-
-    // 25. Sierra Parabólica (Curvatura cuadrática, un sonido intermedio entre triángulo y sierra)
-    float saw_parabolic = (saw * saw) * (phase < 0.5f ? 1.0f : -1.0f);
-    waveformCatalog[WAVE_PARABOLIC][i] = (int16_t)(constrain(saw_parabolic, -1.0f, 1.0f) * 32767.0f);
-
-    // 26. Onda Trapezoidal (Cuadrada con rampas de subida y bajada suaves, menos aliasing)
-    float trapezoid = saw * 2.0f;
-    if (trapezoid > 1.0f) trapezoid = 1.0f;
-    else if (trapezoid < -1.0f) trapezoid = -1.0f;
-    waveformCatalog[WAVE_TRAPEZOID][i] = (int16_t)(constrain(trapezoid, -1.0f, 1.0f) * 32767.0f);
-
-    // 27. Triángulo con "Soft Clipping" (Aplana los extremos del triángulo imitando un circuito saturado)
-    float soft_tri = sinf(triangle * (PI / 2.0f));
-    waveformCatalog[WAVE_SOFT_TRI][i] = (int16_t)(constrain(soft_tri, -1.0f, 1.0f) * 32767.0f);
-
-    // 28. Sierra Asimétrica Plegada (Sube linealmente, baja reflejando la fase)
-    float folded_saw = saw;
-    if (folded_saw > 0.5f) folded_saw = 1.0f - folded_saw;
-    waveformCatalog[WAVE_FOLD_SAW][i] = (int16_t)(constrain(folded_saw * 2.0f, -1.0f, 1.0f) * 32767.0f);
-
-    // 29. FM 1:5 Escarchada (Genera texturas cristalinas / gélidas muy brillantes)
-    float fm_1_5 = sinf(2.0f * PI * phase + 1.8f * sinf(2.0f * PI * phase * 5.0f));
-    waveformCatalog[WAVE_FM_1_5][i] = (int16_t)(constrain(fm_1_5, -1.0f, 1.0f) * 32767.0f);
-
-    // 30. Modulación Cruzada (AM + FM simultánea dentro del mismo ciclo)
-    float cross_mod = sinf(2.0f * PI * phase + 1.2f * sinf(2.0f * PI * phase * 2.0f)) * (0.5f + 0.5f * sine);
-    waveformCatalog[WAVE_CROSS_MOD][i] = (int16_t)(constrain(cross_mod, -1.0f, 1.0f) * 32767.0f);
-
-    // 31. Modulación por Coseno Exponencial (Efecto de formante sintético agresivo)
-    float cos_exp = sinf(2.0f * PI * phase) * cosf(10.0f * phase * phase);
-    waveformCatalog[WAVE_COS_EXP][i] = (int16_t)(constrain(cos_exp, -1.0f, 1.0f) * 32767.0f);
-
-    // 32. Phase Warp Dual (Dos velocidades de fase distintas colisionando en el medio)
-    float warp_phase = (phase < 0.5f) ? powf(phase * 2.0f, 2.0f) * 0.5f : 0.5f + (1.0f - powf((1.0f - phase) * 2.0f, 2.0f)) * 0.5f;
-    float phase_warp = sinf(2.0f * PI * warp_phase);
-    waveformCatalog[WAVE_WARP][i] = (int16_t)(constrain(phase_warp, -1.0f, 1.0f) * 32767.0f);
-
-    // 33. Seno PWM Fijo (Simula un ancho de pulso pero usando ciclos senoidales modificados)
-    float sine_pwm = (phase < 0.3f) ? sinf(2.0f * PI * phase * (0.5f / 0.3f)) : sinf(2.0f * PI * (phase - 0.3f) * (0.5f / 0.7f) + PI);
-    waveformCatalog[WAVE_SINE_PWM][i] = (int16_t)(constrain(sine_pwm, -1.0f, 1.0f) * 32767.0f);
-
-    // 34. Sierra + Cuadrada (El sonido clásico de los bajos Roland TB-03 / TB-303 híbrido)
-    float tb_hybrid = (saw + square) * 0.5f;
-    waveformCatalog[WAVE_TB_HYBRID][i] = (int16_t)(constrain(tb_hybrid, -1.0f, 1.0f) * 32767.0f);
-
-    // 35. Onda Sub-Bajo Harmónica (Un seno limpio acompañado de una octava inferior sutil)
-    float sub_harmonic = (sine * 0.75f) + (sinf(2.0f * PI * phase * 0.5f) * 0.25f);
-    waveformCatalog[WAVE_SUB_HARM][i] = (int16_t)(constrain(sub_harmonic, -1.0f, 1.0f) * 32767.0f);
-
-    // 36. Interferencia de Fase (Dos senos muy cercanos en frecuencia que crean un batido fijo)
-    float phase_beat = (sine + sinf(2.0f * PI * phase * 1.05f)) * 0.5f;
-    waveformCatalog[WAVE_BEAT][i] = (int16_t)(constrain(phase_beat, -1.0f, 1.0f) * 32767.0f);
-
-
-    // 37. Escalera de 8 Bits / Resonancia Cuántica (Divide el ciclo en 8 escalones discretos planos)
-    float step_8bit = floorf(sine * 4.0f) / 4.0f;
-    waveformCatalog[WAVE_STEP_8BIT][i] = (int16_t)(constrain(step_8bit, -1.0f, 1.0f) * 32767.0f);
-
-    // 38. Sync Incompleto / Hard Sync (Una sierra que se reinicia a mitad de camino tres veces)
-    float hard_sync = (2.0f * fmodf(phase * 3.0f, 1.0f)) - 1.0f;
-    waveformCatalog[WAVE_HARD_SYNC][i] = (int16_t)(constrain(hard_sync, -1.0f, 1.0f) * 32767.0f);
-
-    // 39. Onda Polinomial (Curva suave de tercer orden basada exclusivamente en álgebra)
-    float poly_wave = 4.0f * phase * (1.0f - phase) * (phase - 0.5f) * 5.2f; 
-    waveformCatalog[WAVE_POLYNOMIAL][i] = (int16_t)(constrain(poly_wave, -1.0f, 1.0f) * 32767.0f);
-
-    // 40. Ruido Pseudo-Aleatorio Sincronizado (Textura metálica/chile de interferencia digital fija)
-    float pseudo_noise = sinf(phase * 50.0f) * cosf(phase * 12.0f);
-    waveformCatalog[WAVE_PSEUDO_NOISE][i] = (int16_t)(constrain(pseudo_noise, -1.0f, 1.0f) * 32767.0f);
+void generateWaveTables(){
+  float* tempBuffer = (float*)heap_caps_malloc(tableSize * sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  
+  if (tempBuffer == nullptr) {
+    Serial.println("[ERROR] No hay RAM interna suficiente para tempBuffer en generateWaveTables");
+    return;
   }
 
-  syncActiveWaveCache(0, oscWaveform[0], 0);
-  syncActiveWaveCache(1, oscWaveform[1], 0);
-  syncActiveWaveCache(0, oscWaveformEnd[0], 1);
-  syncActiveWaveCache(1, oscWaveformEnd[1], 1);
+  for (int wave_idx = 0; wave_idx < WAVE_COUNT; wave_idx++) {
+    // A. Llenar la tabla con la fórmula pura
+    for (int i = 0; i < tableSize; i++) {
+      float phase = (float)i / tableSize;
+      tempBuffer[i] = catalogoOndas[wave_idx](phase);
+    }
+  
+    // B. Encontrar el pico máximo absoluto
+    float max_abs_val = 0.0f; 
+    for (int i = 0; i < tableSize; ++i) {
+      if (fabsf(tempBuffer[i]) > max_abs_val) { 
+        max_abs_val = fabsf(tempBuffer[i]);
+      } 
+    } 
+
+    // C. Normalizar y guardar en tu catálogo int16_t
+    if (max_abs_val > 0.00001f) {
+      for (int i = 0; i < tableSize; ++i) {
+        float floatNormalizado = tempBuffer[i] / max_abs_val;  
+        waveformCatalog[wave_idx][i] = (int16_t)(floatNormalizado * 32767.0f);
+      }
+    }
+    else {
+      for (int i = 0; i < tableSize; ++i) {
+        waveformCatalog[wave_idx][i] = 0;
+      }
+    }
+  }
+
+  // Liberamos la memoria del búfer temporal para que quede disponible para el resto del sistema
+  heap_caps_free(tempBuffer);
+
+  syncActiveWaveCache(0, oscWaveform[0], WAVE_START);
+  syncActiveWaveCache(1, oscWaveform[1], WAVE_START);
+  syncActiveWaveCache(0, oscWaveformEnd[0], WAVE_END);
+  syncActiveWaveCache(1, oscWaveformEnd[1], WAVE_END);
+
+}
+
+void generateIconTables() {
+  for (int wave_idx = 0; wave_idx < WAVE_COUNT; wave_idx++) {
+    for (int x = 0; x < ICON_W; x++) {
+      
+      // Mapeamos el píxel X (0 a 59) al índice de tu tabla de audio (0 a 511)
+      int targetIndex = (x * tableSize) / ICON_W;
+      
+      // Leemos el valor entero original de tu catálogo (-32767 a 32767)
+      int16_t valorInt16 = waveformCatalog[wave_idx][targetIndex];
+      
+      // OPTIMIZACIÓN MATEMÁTICA: Multiplicamos directamente el entero por -11 y dividimos entre 32767.
+      // Esto elimina por completo los números flotantes en este bucle, acelerando el arranque.
+      int yPixel = (ICON_H / 2) + (int)((valorInt16 * -11) / 32767);
+
+      cacheGraficaOndas[wave_idx][x] = (uint8_t)constrain(yPixel, 0, ICON_H - 1);
+      
+    }
+  }
 }
 
 void setupI2S() {
@@ -1491,6 +1302,7 @@ void setup() {
   }
 
   setupI2S();
+
   Serial2.begin(31250, SERIAL_8N1, PIN_RX, PIN_TX);
   #if SYNTH_USB_MIDI_ENABLED
     usbMidi.begin();
@@ -1504,16 +1316,11 @@ void setup() {
   if (!LittleFS.begin(true)) {
     Serial.println("LittleFS init failed");
   }
+  Serial.println("LittleFS OK");
   refreshPresetFileList(false);
-  generateWaveTables();
-  for(byte n=0;n<2;n++){
-    syncActiveWaveCache(n, oscWaveform[n], 0);
-    syncActiveWaveCache(n, oscWaveform[n], 1);
-  }
-  updateEnvelopeRates();
-  filterCutoffHz = cutoffControlToHz(cutoffControl);
-
-  xTaskCreatePinnedToCore(audioTask, "Audio", 8192, NULL, 3, NULL, 0);
+  Serial.println("refreshPresetFileList");
+  
+  
 
   // 0. Leds
   leds.begin();
@@ -1550,20 +1357,6 @@ void setup() {
   }
   encoder.begin(false); //pinMode A/B INPUT
 
-  // 2. TFT
-  tft.begin();
-  tft.setRotation(3);
-  tft.fillScreen(TFT_BLACK);
-  tft.setFreeFont(LAB_TEXT);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("SyntheBasic", 100, 120);
-  delay(500);
-  
-  drawUI();
-
-  Serial.println("TFT configurada");
-
-  // 3. Configurar pines 
   pinMode(PIN_INT_ENC, INPUT_PULLUP);
   pinMode(PIN_INT_BTN, INPUT_PULLUP);
   pinMode(PIN_ENC_BOT, INPUT);
@@ -1571,14 +1364,48 @@ void setup() {
   pinMode(PIN_AM, INPUT_PULLUP);
   pinMode(PIN_AZ, INPUT_PULLUP);
 
-  // 4. Interrupciones
+
+  // 2. TFT
+  tft.begin();
+  tft.setRotation(3);
+  tft.fillScreen(TFT_BLACK);
+  menuSprite.createSprite(ICON_W, ICON_H);
+  tft.setFreeFont(LAB_TEXT);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("SyntheBasic", 100, 120);
+  delay(500);
+  
+  
+
+  Serial.println("TFT configurada");
+
+  
+
+  // 3. Interrupciones
   attachInterrupt(digitalPinToInterrupt(PIN_INT_ENC), isrEnc, FALLING);
   attachInterrupt(digitalPinToInterrupt(PIN_INT_BTN), isrBtn, FALLING);  
   Serial.println("Interrupciones OK");
   Serial.printf("Buffer de audio: %d muestras\n", BUFFER_AUDIO);
 
+  // 4. Generacion de tablas e iconos
+  generateWaveTables();
+  Serial.println("generated Wave Tables OK");
+  generateIconTables();
+  Serial.println("generated Icon Tables OK");
+
+  // 5. Funciones de audio e interfaz
+  drawUI();
+
+  updateEnvelopeRates();
+  filterCutoffHz = cutoffControlToHz(cutoffControl);
   sequencerSteps = new SequencerStep[stepsForSeq];
   seqDefault(stepsForSeq);
+  
+  
+
+  // Tarea de audio en el Core 0
+  xTaskCreatePinnedToCore(audioTask, "Audio", 8192, NULL, 3, NULL, 0);
+  
 
 
 }

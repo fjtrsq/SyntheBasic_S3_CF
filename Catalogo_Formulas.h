@@ -1,12 +1,65 @@
+float varPulse = 0.2f;
+enum Waveform : uint8_t {
+  WAVE_SAW = 0,
+  WAVE_SINE,
+  WAVE_TRIANGLE,
+  WAVE_SQUARE,
+  WAVE_PULSE,
+  WAVE_SUPER,
+  WAVE_ORGAN,
+  WAVE_CRUSH,
+  WAVE_DRIVE,
+  WAVE_SINE_EXP,
+  WAVE_SAW_EXP,
+  WAVE_RECTIFIED,
+  WAVE_CHEBYSHEV,
+  WAVE_FM_1_1,
+  WAVE_FM_1_3,
+  WAVE_FM_1_4,
+  WAVE_FM_1_5,
+  WAVE_FM_FEEDBACK,
+  WAVE_VOCAL_AA,
+  WAVE_VOCAL_OO,
+  WAVE_HOLLOW,
+  WAVE_EVEN_HARM,
+  WAVE_PINCH,
+  WAVE_SINC,
+  WAVE_CHIRP,
+  WAVE_GRIT,
+  WAVE_TRI_INVERT,
+  WAVE_FRACTAL,
+  WAVE_WIERSTRASS,
+  WAVE_PLUCK,
+  WAVE_CLARINET,
+  WAVE_BELL_METAL,
+  WAVE_CELLO,
+  WAVE_PARABOLIC,
+  WAVE_TRAPEZOID,
+  WAVE_SOFT_TRI,
+  WAVE_FOLD_SAW,
+  WAVE_CROSS_MOD,
+  WAVE_COS_EXP,
+  WAVE_WARP,
+  WAVE_SINE_PWM,
+  WAVE_TB_HYBRID,
+  WAVE_SUB_HARM,
+  WAVE_BEAT,
+  WAVE_STEP_8BIT,
+  WAVE_HARD_SYNC,
+  WAVE_POLYNOMIAL,
+  WAVE_PSEUDO_NOISE,
+  WAVE_NOISE,
+  WAVE_COUNT
+};
+
+
 inline float saw(float phase){ return  (2.0f * phase) - 1.0f; }
 inline float sine(float phase){ return sinf(2.0f * PI * phase);}
 inline float triangle(float phase){ return 4.0f * fabsf(phase - 0.5f) - 1.0f;}
 inline float square(float phase){ return (phase < 0.5f) ? 1.0f : -1.0f;}
 
-float pulse(float phase){ return (phase < varPulse) ? 1.0f : -1.0f;}
-float super(float phase){ return  (0.60f * saw(phase))
-                + (0.25f * sinf((2.0f * PI * phase) + 0.12f))
-                + (0.15f * sinf((2.0f * PI * phase * 2.0f) - 0.07f));}
+float pulse(float phase){ return (phase < varPulse) ? 1.0f : -1.0f;} 
+float super(float phase){ return (0.60f * saw(phase)) + (0.25f * sinf((2.0f * PI * phase) + 0.12f))+ (0.15f * sinf((2.0f * PI * phase * 2.0f) - 0.07f));}
 float organ(float phase){ return (sine(phase) + 0.50f * sinf(2.0f * PI * phase * 2.0f) + 0.30f * sinf(2.0f * PI * phase * 3.0f));}
 float crush(float phase){ return roundf(sine(phase) * 6.0f);}
 
@@ -19,7 +72,7 @@ float crush(float phase){ return roundf(sine(phase) * 6.0f);}
 // 4. Rectificación de Onda Completa (Sube el tono una octava de forma distorsionada)
     float full_rect(float phase){ return (fabsf(sine(phase)) * 2.0f) - 1.0f;}
 // 5. Polinomio de Chebyshev (Genera un armónico puro de 4ª orden sin usar senos extras)
-    float chebyshev4(float phase){ return 8.0f * powf(sine(phase), 4.0f) - 8.0f * (sine(phase) * sine(phase)) + 1.0f;
+    float chebyshev4(float phase){ return 8.0f * powf(sine(phase), 4.0f) - 8.0f * (sine(phase) * sine(phase)) + 1.0f;}
 // 6. FM Clásica 1:1 (Sonido de campana/órgano eléctrico básico)
     float fm_1_1(float phase){ return sinf(2.0f * PI * phase + 1.0f * sinf(2.0f * PI * phase));}
 // 7. FM Metálica 1:3 (Tono de campana de metal o campana tubular)
@@ -29,7 +82,7 @@ float crush(float phase){ return roundf(sine(phase) * 6.0f);}
 // 9. Automodulación FM (Genera una sierra matemática muy brillante y limpia)
     float fm_feedback(float phase){ return sinf(2.0f * PI * phase + 0.8f * sine(phase));}
 // 10. Pseudo-Vocal "AA" (Filtro de formante fijo imitando la voz humana)
-    float vocal_aa(float phase){ return (sine(phase) + 0.8f * sinf(2.0f * PI * phase * 3.0f) + 0.4f * sinf(2.0f * PI * phase * 5.0f))f;}
+    float vocal_aa(float phase){ return (sine(phase) + 0.8f * sinf(2.0f * PI * phase * 3.0f) + 0.4f * sinf(2.0f * PI * phase * 5.0f));}
 // 11. Pseudo-Vocal "OO" (Formante más cerrado y oscuro)
     float vocal_oo(float phase){ return (sine(phase) + 0.6f * sinf(2.0f * PI * phase * 2.0f) + 0.1f * sinf(2.0f * PI * phase * 3.0f));}
 // 12. Onda Hueca / "Hollow" (Solo armónicos impares, textura similar al clarinete)
@@ -68,6 +121,7 @@ float crush(float phase){ return roundf(sine(phase) * 6.0f);}
       float trapez= saw(phase) * 2.0f;
       if (trapez > 1.0f) return  1.0f;
       else if (trapez < -1.0f) return  -1.0f;
+      return trapez;
     }
 // 27. Triángulo con "Soft Clipping" (Aplana los extremos del triángulo imitando un circuito saturado)
     float soft_tri(float phase){ return sinf(triangle(phase) * (PI / 2.0f));}
@@ -109,79 +163,18 @@ float crush(float phase){ return roundf(sine(phase) * 6.0f);}
     float noise(float phase){ return ((float)rand() / ((float)RAND_MAX / 2.0f)) - 1.0f;}
 
 typedef float (*FormulaOnda)(float phase);
-const FormulaOnda catalogoOndas[NUM_ONDAS] = {
+const FormulaOnda catalogoOndas[WAVE_COUNT] = {
     saw,sine,triangle,square,pulse,super,organ,crush,warm_drive,sine_exp,
     saw_exp,full_rect,chebyshev4,fm_1_1,fm_1_3,fm_1_4,fm_1_5,fm_feedback,vocal_aa,
     vocal_oo,hollow,even_harmonics,phase_pinch,sinc_pulse,chirp,grit,tri_invert,
-    fractal_mod,noise_fractal,string_pluck,clarinet,bell_metall,cello,saw_parabolic,
+    fractal_mod,noise_fractal,string_pluck,clarinet,bell_metal,cello,saw_parabolic,
     trapezoid,soft_tri,folded_saw,cross_mod,cos_exp,warp,sine_pwm,tb_hybrid,
     sub_harmonic,phase_beat,step_8bit,hard_sync,poly_wave,pseudo_noise,noise
 };
 
 
-void generateWaveTables(){
-    float tempBuffer[WAVE_COUNT]; 
-    for (int wave_idx = 0; wave_idx < WAVE_COUNT; wave_idx++) {
-        // A. Llenar la tabla con la fórmula pura
-        for (int i = 0; i < tableSize; i++) {
-            float phase = (float)i / tableSize;
-            tempBuffer[i] = catalogoOndas[wave_idx](phase);
-        }
-    }
 
-    // B. Normalizar (La función que encontraste)
-    float max_abs_val = 0.0f; 
-    for (int i = 0; i < tableSize; ++i) {
-        if (fabsf(tempBuffer[i]) > max_abs_val) { 
-            max_abs_val = fabsf(tempBuffer[i]);
-        } 
-    } 
-    if (max_abs_val > 0.00001f) {
-        for (int i = 0; i < tableSize; ++i) {
-            float floatNormalizado = tempBuffer[i] / max_abs_val;  
-            waveformCatalog[wave_idx][i] = (int16_t)(floatNormalizado * 32767.0f);
-        }
-    }
 
-}
 
-void precalcularIconosDesdeAudioInt16() {
-  for (int wave_idx = 0; wave_idx < WAVE_COUNT; wave_idx++) {
-    for (int x = 0; x < ICON_W; x++) {
-      
-      // Mapeamos el píxel X (0 a 59) al índice de tu tabla de audio (0 a 511)
-      int targetIndex = (x * tableSize) / ICON_W;
-      
-      // Leemos el valor entero original de tu catálogo (-32767 a 32767)
-      int16_t valorInt16 = waveformCatalog[wave_idx][targetIndex];
-      
-      // Convertimos el rango entero (-32767 a 32767) al rango de píxeles del icono (0 a 24)
-      // Dividir entre 32767.0f nos devuelve el equivalente flotante (-1.0 a 1.0) de forma idéntica
-      float valorOndaFlotante = (float)valorInt16 / 32767.0f;
-      int yPixel = (ICON_H / 2) + (int)(valorOndaFlotante * -11.0f);
-
-      cacheGraficaOndas[wave_idx][x] = (uint8_t)constrain(yPixel, 0, ICON_H - 1);
-    }
-  }
-
-void drawWaveAudioIcon(int idOnda, int posX, int posY, uint16_t colorLinea, uint16_t colorFondo) {
-  // A. Limpiamos el lienzo del único Sprite antes de pintar la nueva onda
-  menuSprite.fillSprite(colorFondo);
-
-  int ultimoX = 0;
-  int ultimoY = cacheGraficaOndas[idOnda][0];
-
-  // B. Dibujamos la geometría dentro del Sprite leyendo la caché ultrarrápida
-  for (int x = 1; x < ICON_W; x++) {
-    int yPixel = cacheGraficaOndas[idOnda][x];
-    menuSprite.drawLine(ultimoX, ultimoY, x, yPixel, colorLinea);
-    ultimoX = x;
-    ultimoY = yPixel;
-  }
-
-  // C. Estampamos el Sprite en la pantalla ST7789. 
-  // El Sprite se libera inmediatamente para poder ser reutilizado.
-  menuSprite.pushSprite(posX, posY);
-}
 
 
