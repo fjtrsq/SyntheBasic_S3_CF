@@ -613,12 +613,7 @@ void processControl(){
   if ((millis() - lastDebounceTime) > debounceDelay) {
     if (botAz && !botAz_estable) {  
       oscSelect = 1;
-      if (currentPage == ADSR_PARAM_PAGE) drawMainVisualization();
-      if (currentPage == 2) {
-        leds.setColor(9, oscSelect ? CYAN : YELLOW);
-        leds.show();
-        drawExtraValue();
-      }
+      drawMainVisualization();
     }
     botAz_estable = botAz;
   }
@@ -632,11 +627,7 @@ void processControl(){
   if ((millis() - lastDebounceTime) > debounceDelay) {
     if (botAm && !botAm_estable) {
       oscSelect = 0;
-      if (currentPage == ADSR_PARAM_PAGE) drawMainVisualization();
-      if (currentPage == 2) {
-        leds.setColor(9, oscSelect ? CYAN : YELLOW);
-        leds.show();
-        drawExtraValue();
+      drawMainVisualization();
       }
     }
     botAm_estable = botAm;
@@ -992,11 +983,19 @@ void drawMainVisualization(){
     drawWaveAudioIcon(oscWaveform[1], 185, 214, oscSelect ? TFT_CYAN : TFT_DARKGREY);
     drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, TFT_YELLOW);
     drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, TFT_CYAN);
+    drawExtraValue();
+    SimpleColor color = oscSelect ? CYAN : YELLOW;
+    leds.setColor(9, color);
+    leds.show();
   }
   else {
     drawAudioWaveform();
     drawWaveAudioIcon(oscWaveform[0], 255, 159, TFT_YELLOW);
     drawWaveAudioIcon(oscWaveform[1], 255, 214, TFT_CYAN);
+    drawExtraValue();
+    SimpleColor color = oscSelect ? CYAN : YELLOW;
+    leds.setColor(9, color);
+    leds.show();
   }
 }
 
