@@ -13,10 +13,10 @@ enum Waveform : uint8_t {
   WAVE_SAW_EXP,
   WAVE_RECTIFIED,
   WAVE_CHEBYSHEV,
-  WAVE_FM_1_1,
-  WAVE_FM_1_3,
-  WAVE_FM_1_4,
-  WAVE_FM_1_5,
+  WAVE_FM_CLASIC,
+  WAVE_FM_METAL,
+  WAVE_FM_INDUST,
+  WAVE_FM_CRISTAL,
   WAVE_FM_FEEDBACK,
   WAVE_VOCAL_AA,
   WAVE_VOCAL_OO,
@@ -74,11 +74,11 @@ float crush(float phase){ return roundf(sine(phase) * 6.0f);}
 // 5. Polinomio de Chebyshev (Genera un armónico puro de 4ª orden sin usar senos extras)
     float chebyshev4(float phase){ return 8.0f * powf(sine(phase), 4.0f) - 8.0f * (sine(phase) * sine(phase)) + 1.0f;}
 // 6. FM Clásica 1:1 (Sonido de campana/órgano eléctrico básico)
-    float fm_1_1(float phase){ return sinf(2.0f * PI * phase + 1.0f * sinf(2.0f * PI * phase));}
+    float fm_clasic(float phase){ return sinf(2.0f * PI * phase + 1.0f * sinf(2.0f * PI * phase));}
 // 7. FM Metálica 1:3 (Tono de campana de metal o campana tubular)
-    float fm_1_3(float phase){ return sinf(2.0f * PI * phase + 1.5f * sinf(2.0f * PI * phase * 3.0f));}
+    float fm_metal(float phase){ return sinf(2.0f * PI * phase + 1.5f * sinf(2.0f * PI * phase * 3.0f));}
 // 8. FM Agresiva 1:4 (Sonido industrial, ruidoso e inarmónico)
-    float fm_1_4(float phase){ return sinf(2.0f * PI * phase + 2.0f * sinf(2.0f * PI * phase * 4.0f));}
+    float fm_indust(float phase){ return sinf(2.0f * PI * phase + 2.0f * sinf(2.0f * PI * phase * 4.0f));}
 // 9. Automodulación FM (Genera una sierra matemática muy brillante y limpia)
     float fm_feedback(float phase){ return sinf(2.0f * PI * phase + 0.8f * sine(phase));}
 // 10. Pseudo-Vocal "AA" (Filtro de formante fijo imitando la voz humana)
@@ -132,7 +132,7 @@ float crush(float phase){ return roundf(sine(phase) * 6.0f);}
       return folded;
     }
 // 29. FM 1:5 Escarchada (Genera texturas cristalinas / gélidas muy brillantes)
-    float fm_1_5(float phase){ return sinf(2.0f * PI * phase + 1.8f * sinf(2.0f * PI * phase * 5.0f));}
+    float fm_cristal(float phase){ return sinf(2.0f * PI * phase + 1.8f * sinf(2.0f * PI * phase * 5.0f));}
 // 30. Modulación Cruzada (AM + FM simultánea dentro del mismo ciclo)
     float cross_mod(float phase){ return sinf(2.0f * PI * phase + 1.2f * sinf(2.0f * PI * phase * 2.0f)) * (0.5f + 0.5f * sine(phase));}  
 // 31. Modulación por Coseno Exponencial (Efecto de formante sintético agresivo)
@@ -165,7 +165,7 @@ float crush(float phase){ return roundf(sine(phase) * 6.0f);}
 typedef float (*FormulaOnda)(float phase);
 const FormulaOnda catalogoOndas[WAVE_COUNT] = {
     saw,sine,triangle,square,pulse,super,organ,crush,warm_drive,sine_exp,
-    saw_exp,full_rect,chebyshev4,fm_1_1,fm_1_3,fm_1_4,fm_1_5,fm_feedback,vocal_aa,
+    saw_exp,full_rect,chebyshev4,fm_clasic,fm_metal,fm_indust,fm_cristal,fm_feedback,vocal_aa,
     vocal_oo,hollow,even_harmonics,phase_pinch,sinc_pulse,chirp,grit,tri_invert,
     fractal_mod,noise_fractal,string_pluck,clarinet,bell_metal,cello,saw_parabolic,
     trapezoid,soft_tri,folded_saw,cross_mod,cos_exp,warp,sine_pwm,tb_hybrid,

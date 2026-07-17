@@ -561,7 +561,10 @@ void processControl(){
           applyPageDefaultsToggle(1, PAGE1_DEFAULTS, page1EditedValues, page1UsingDefaults);
         break;
         case 2:
-          oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT - 1);
+          oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT);
+          if(oscWaveform[oscSelect] == WAVE_COUNT && enc == 1) oscWaveform[oscSelect] = WAVE_SAW;
+          if(oscWaveform[oscSelect] == WAVE_COUNT && enc == -1) oscWaveform[oscSelect] = WAVE_NOISE;
+          drawWaveAudioIcon(oscWaveform[oscSelect], 185, oscSelect ? 214 : 159, oscSelect ? TFT_CYAN : TFT_YELLOW);
           leds.setColor(currentPage, RED);
           leds.show();
         break;
@@ -581,7 +584,9 @@ void processControl(){
       drawExtraValue();
     }
     else if(currentPage == ADSR_PARAM_PAGE){
-      oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT - 1);
+      oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT);
+      if(oscWaveform[oscSelect] == WAVE_COUNT && enc == 1) oscWaveform[oscSelect] = WAVE_SAW;
+      if(oscWaveform[oscSelect] == WAVE_COUNT && enc == -1) oscWaveform[oscSelect] = WAVE_NOISE;
       drawWaveAudioIcon(oscWaveform[oscSelect], 255, oscSelect ? 214 : 159, oscSelect ? TFT_CYAN : TFT_YELLOW); 
       leds.setColor(currentPage, RED);
       leds.show();
@@ -608,9 +613,12 @@ void processControl(){
   if ((millis() - lastDebounceTime) > debounceDelay) {
     if (botAz && !botAz_estable) {  
       oscSelect = 1;
-      if (currentPage == ADSR_PARAM_PAGE) for(byte i=0;i<8;i++) drawValue(i);
-      drawMainVisualization();
-      if (currentPage == 0) drawExtraValue();
+      if (currentPage == ADSR_PARAM_PAGE) drawMainVisualization();
+      if (currentPage == 2) {
+        leds.setColor(9, oscSelect ? CYAN : YELLOW);
+        leds.show();
+        drawExtraValue();
+      }
     }
     botAz_estable = botAz;
   }
@@ -624,9 +632,12 @@ void processControl(){
   if ((millis() - lastDebounceTime) > debounceDelay) {
     if (botAm && !botAm_estable) {
       oscSelect = 0;
-      if (currentPage == ADSR_PARAM_PAGE) for(byte i=0;i<8;i++) drawValue(i);
-      drawMainVisualization();
-      if (currentPage == 0) drawExtraValue();
+      if (currentPage == ADSR_PARAM_PAGE) drawMainVisualization();
+      if (currentPage == 2) {
+        leds.setColor(9, oscSelect ? CYAN : YELLOW);
+        leds.show();
+        drawExtraValue();
+      }
     }
     botAm_estable = botAm;
   }
@@ -737,12 +748,12 @@ void uint8ToBinaryStr(uint8_t num, char *buffer) {
 
 void drawExtraValue(){
   char buf[12] = "";
-  const int x = 5;
+  const int x = 10;
   const int y = 130;
   tft.setFreeFont(NUM_TEXT);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_WHITE);
-  tft.fillRect(x, y, 150, 20, TFT_BLACK);
+  tft.fillRect(x, y, 170, 20, TFT_BLACK);
   switch(currentPage){
     case 0: 
       
@@ -751,7 +762,7 @@ void drawExtraValue(){
       snprintf(buf, sizeof(buf), "%s", page1UsingDefaults ? "DEFAULT" : "EDIT"); 
       break;
     case 2: 
-      snprintf(buf, sizeof(buf), "%s %s", OSC_NAME[oscSelect], WAVE_NAMES[oscWaveform[oscSelect]]);
+      snprintf(buf, sizeof(buf), "%s",  WAVE_LONG_NAMES[oscWaveform[oscSelect]]);
       break;
     case 3: 
       snprintf(buf, sizeof(buf), "%s", page3UsingDefaults ? "DEFAULT" : "EDIT"); 
@@ -789,7 +800,7 @@ void drawExtraValue(){
       break;
     }
     case 8:
-      snprintf(buf, sizeof(buf), "%s %s", OSC_NAME[oscSelect], WAVE_NAMES[oscWaveform[oscSelect]]);
+      snprintf(buf, sizeof(buf), "%s: %s", OSC_NAME[oscSelect], WAVE_LONG_NAMES[oscWaveform[oscSelect]]);
       break;
   }
   if (currentPage != 7) {
@@ -962,9 +973,14 @@ void drawPresetFileList(){
 
 void drawMainVisualization(){
   if (currentPage == ADSR_PARAM_PAGE) {
+    for(byte i=0;i<8;i++) drawValue(i);
     drawADSR();
-    drawWaveAudioIcon(oscWaveform[0], 255, 159, TFT_YELLOW);
-    drawWaveAudioIcon(oscWaveform[1], 255, 214, TFT_CYAN);
+    drawWaveAudioIcon(oscWaveform[0], 255, 159, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
+    drawWaveAudioIcon(oscWaveform[1], 255, 214, oscSelect ? TFT_CYAN : TFT_DARKGREY);
+    drawExtraValue();
+    SimpleColor color = oscSelect ? CYAN : YELLOW;
+    leds.setColor(9, color);
+    leds.show();
   }
   else if (currentPage == FILE_PARAM_PAGE) {
     drawPresetFileList();
@@ -972,8 +988,8 @@ void drawMainVisualization(){
 
   else if (currentPage == 2){  //Morphing
     drawAudioWaveform();
-    drawWaveAudioIcon(oscWaveform[0], 185, 159, TFT_YELLOW);
-    drawWaveAudioIcon(oscWaveform[1], 185, 214, TFT_CYAN);
+    drawWaveAudioIcon(oscWaveform[0], 185, 159, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
+    drawWaveAudioIcon(oscWaveform[1], 185, 214, oscSelect ? TFT_CYAN : TFT_DARKGREY);
     drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, TFT_YELLOW);
     drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, TFT_CYAN);
   }
@@ -1016,21 +1032,24 @@ void drawWaveAudioIcon(uint8_t idWave, int posX, int posY, uint16_t color) {
   // A. Limpiamos el lienzo del único Sprite antes de pintar la nueva onda
   menuSprite.fillSprite(TFT_BLACK);
   
+  int centroY = ICON_H / 2;
   int ultimoX = 0;
-  int ultimoY = cacheGraficaOndas[idWave][0];
+  int ultimoY = centroY;
   
   // B. Dibujamos la geometría dentro del Sprite leyendo la caché ultrarrápida
-  for (int x = 1; x < ICON_W; x++) {
+  for (int x = 1; x < ICON_W - 1; x++) {
     int yPixel = cacheGraficaOndas[idWave][x];
     menuSprite.drawLine(ultimoX, ultimoY, x, yPixel, color);
     ultimoX = x;
     ultimoY = yPixel;
   }
+  menuSprite.drawLine(ultimoX, ultimoY, ICON_W - 1, centroY, color);
 
   // C. Estampamos el Sprite en la pantalla ST7789. 
   // El Sprite se libera inmediatamente para poder ser reutilizado.
   menuSprite.pushSprite(posX, posY);
   // texto
+  tft.fillRect(posX,posY-18,60,17,TFT_BLACK);
   tft.setFreeFont(LAB_TEXT);
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(color);

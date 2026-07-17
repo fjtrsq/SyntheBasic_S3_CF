@@ -246,9 +246,16 @@ FileParam filePageParams[PARAMS_PER_PAGE] = {
   {"POS", 0, 0, PN_LEN-1, 1, INT}, {"CHAR", 1, 0, 38, 1, CHARSEL},
 };
 
+const char* WAVE_LONG_NAMES[] = {"SAW", "SINE", "TRIANGLE", "SQUARE", "PULSE", "SUPER SAW", "ORGAN", "CRUSH", "DRIVE WARM",
+      "SINE EXP", "SAW EXP", "RECTIFIED", "CHEBYSHEV", "FM CLASIC", "FM METAL", "FM INDUST", "FM CRISTAL", "FM FEEDBACK", "VOCAL AA",
+      "VOCAL OO", "HOLLOW", "EVEN HARM", "PINCH", "SINC PULSE", "CHIRP", "GRIT", "TRI INVERT","FRACTAL", "WIERSTRASS", "PLUCK",
+      "CLARINET", "BELL METAL", "CELLO", "PARABOLIC", "TRAPEZOID", "SOFT TRI", "FOLD SAW", "CROSS MOD", "COS EXP",
+      "WARP", "SINE PWM", "TB HYBRID", "SUB HARM", "BEAT", "STEP_8BIT", "HARD SYNC", "POLYNOMIAL", "PSEUDO NOISE",
+      "NOISE",
+};
 const char* WAVE_NAMES[] = {"Saw", "Sine", "Tri", "Sqr", "Pulse", "SpSaw", "Organ", "Crush",
                             "Warm", "SinEx", "SawEx", "FlRct", "Chebs", "FMcla", "FMmet", 
-                            "FMnoi", "FMcrp", "FMfdB", "Voc A", "Voc O", "Holow", "Harmo", 
+                            "FMind", "FMcrp", "FMfdB", "Voc A", "Voc O", "Holow", "Harmo", 
                             "Pinch", "SyPul", "Chirp", "Grit" ,"TrInv", "Frctl", "Wiers",
                             "Pluck", "Clart", "BelTb", "Cello", "Prbol", "Trapz", "TrSft",
                             "SawFl", "CrosM", "CosEx", "WarpD", "SnPwm", "SwSqr", "SbHar",
