@@ -154,19 +154,19 @@ void toggleADSRDefaults(uint8_t osc) {
 void refreshValue(Page page, uint8_t param , int dirAcc){
   uint16_t color = 0;
   if(page < SOUND_PARAM_PAGES) {
-    synthValue[page][param] = constrain(synthValue[page][param] + (dirAcc * parametroPages[page][param].step),
+    synthValue[page][param] = constrain(synthValue[page][param] + dirAcc,
                 parametroPages[page][param].min,parametroPages[page][param].max);
     const float value = synthValue[page][param];
     uint8_t pageParam = page * PARAMS_PER_PAGE + param;
     switch (pageParam) {
       //pagina 1 CONFIG currentPage = 0
-      case 0:  break;
+      case 0:  velocityExponent = value * 0.1f; break;
       case 1:  sequencerBpm = (uint16_t)roundf(value); break;
       case 2:  varPulse = value * 0.01; 
         regeneratePulseTable(varPulse); 
         break;
       case 3:  masterGain = value * 0.01; break;
-      case 4:  velocityExponent = value * 0.1f; break;
+      case 4:   break;
       case 5:
         maxReleaseVoices = (uint8_t)roundf(value);
         synthValue[0][5] = (float)maxReleaseVoices;
@@ -415,14 +415,14 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
   //pagina 9 ADSR currentPage = 8
   else if(page == PAGE_ADSR) { 
     if (param < TOTAL_ADSR) {
-      ADSRvalues[oscSelect][param] = constrain(ADSRvalues[oscSelect][param] + (dirAcc * ADSRpage[param].step),
+      ADSRvalues[oscSelect][param] = constrain(ADSRvalues[oscSelect][param] + dirAcc,
         ADSRpage[param].min, ADSRpage[param].max);    
       ADSRedited[oscSelect][param] = ADSRvalues[oscSelect][param];
       adsrUsingDefaults[oscSelect] = false;
     }
     else{
       uint8_t mixIdx = param - TOTAL_ADSR; // 0 para OSC MIX, 1 para DETUNE
-      ADSRmixValues[mixIdx] = constrain(ADSRmixValues[mixIdx] + (dirAcc * ADSRpage[param].step),
+      ADSRmixValues[mixIdx] = constrain(ADSRmixValues[mixIdx] + dirAcc,
         ADSRpage[param].min, ADSRpage[param].max);
     }
     updateEnvelopeRates(oscSelect);
@@ -823,12 +823,12 @@ void drawLinesADSR(uint8_t osc){
   int height = 79;
 
   // 1. Extraemos y normalizamos los valores del oscilador ACTUAL (0.0f a 1.0f)
-  float L_norm = ADSRvalues[osc][DELAY] / ADSRpage[DECAY].max;
-  float A_norm = ADSRvalues[osc][ATTACK] / ADSRpage[ATTACK].max;
-  float AL     = ADSRvalues[osc][ATTACK_LEV] / ADSRpage[ATTACK_LEV].max;
-  float D_norm = ADSRvalues[osc][DECAY] / ADSRpage[DECAY].max;
-  float S      = ADSRvalues[osc][SUSTAIN] / ADSRpage[SUSTAIN].max;
-  float R_norm = ADSRvalues[osc][RELEASE] / ADSRpage[RELEASE].max;
+  float L_norm = (ADSRvalues[osc][DELAY] * 1.0f) / ADSRpage[DELAY].max;
+  float A_norm = (ADSRvalues[osc][ATTACK] * 1.0f) / ADSRpage[ATTACK].max;
+  float AL     = (ADSRvalues[osc][ATTACK_LEV] * 1.0f) / ADSRpage[ATTACK_LEV].max;
+  float D_norm = (ADSRvalues[osc][DECAY] * 1.0f) / ADSRpage[DECAY].max;
+  float S      = (ADSRvalues[osc][SUSTAIN] * 1.0f) / ADSRpage[SUSTAIN].max;
+  float R_norm = (ADSRvalues[osc][RELEASE] * 1.0f) / ADSRpage[RELEASE].max;
   uint16_t color = (osc == 0) ? TFT_YELLOW : TFT_CYAN;
 
   // Aplicamos la raíz cuadrada para la sensibilidad visual
@@ -840,10 +840,10 @@ void drawLinesADSR(uint8_t osc){
 
   // 2. CONGRUENCIA TEMPORAL: Calculamos los mismos valores para el OTRO oscilador
   uint8_t otroOsc = (osc == 0) ? 1 : 0;
-  float L_otro = sqrtf(ADSRvalues[otroOsc][DELAY] / ADSRpage[DECAY].max);
-  float A_otro = sqrtf(ADSRvalues[otroOsc][ATTACK] / ADSRpage[ATTACK].max);
-  float D_otro = sqrtf(ADSRvalues[otroOsc][DECAY] / ADSRpage[DECAY].max);
-  float R_otro = sqrtf(ADSRvalues[otroOsc][RELEASE] / ADSRpage[RELEASE].max);
+  float L_otro = sqrtf((ADSRvalues[otroOsc][DELAY] * 1.0f) / ADSRpage[DECAY].max);
+  float A_otro = sqrtf((ADSRvalues[otroOsc][ATTACK] * 1.0f) / ADSRpage[ATTACK].max);
+  float D_otro = sqrtf((ADSRvalues[otroOsc][DECAY] * 1.0f) / ADSRpage[DECAY].max);
+  float R_otro = sqrtf((ADSRvalues[otroOsc][RELEASE] * 1.0f) / ADSRpage[RELEASE].max);
 
   // 3. Buscamos el "peor escenario" (la suma de tiempos más larga entre los dos osciladores)
   float sumaOscActual = L + A + D + sustainTime + R;
@@ -852,7 +852,7 @@ void drawLinesADSR(uint8_t osc){
   // El total de la pantalla se adaptará al oscilador que tenga la envolvente más larga
   float totalWeights = (sumaOscActual > sumaOscOtro) ? sumaOscActual : sumaOscOtro;
 
-  // 4. CORRECCIÓN Y AJUSTE: Ancho mínimo dinámico para el Delay y fijos para el resto
+  /* 4. CORRECCIÓN Y AJUSTE: Ancho mínimo dinámico para el Delay y fijos para el resto
   int minWidthDelay = (L_norm > 0.0f) ? 4 : 0; 
   int minWidthOtros = 8; 
   int totalMinWidth = minWidthDelay + (minWidthOtros * 4); 
@@ -865,6 +865,20 @@ void drawLinesADSR(uint8_t osc){
   int wD = minWidthOtros + (int)((D / totalWeights) * dynamicWidth);
   int wS = minWidthOtros + (int)((sustainTime / totalWeights) * dynamicWidth);
   int wR = minWidthOtros + (int)((R / totalWeights) * dynamicWidth); 
+  */
+
+  // 5 Sin minimos
+  int wL = (int)((L / totalWeights) * width);
+  int wA = (int)((A / totalWeights) * width);
+  int wD = (int)((D / totalWeights) * width);
+  int wS = (int)((sustainTime / totalWeights) * width);
+  // Si este es el oscilador más largo, ajustamos el final absorbiendo el resto exacto
+  int wR;
+  if (sumaOscActual >= sumaOscOtro) {
+    wR = width - (wL + wA + wD + wS);
+  } else {
+    wR = (int)((R / totalWeights) * width);
+  }
 
   // 6. Construir las coordenadas X
   int xL = x0 + wL;

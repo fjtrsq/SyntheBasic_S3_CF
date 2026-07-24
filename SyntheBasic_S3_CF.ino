@@ -144,86 +144,84 @@ bool applyingPageDefaultsToggle = false;
 
 
 enum ADSR : uint8_t {DELAY, ATTACK, ATTACK_LEV, DECAY, SUSTAIN, RELEASE, TOTAL_ADSR};
-const float ADSR_DEFAULTS[N_OSC][TOTAL_ADSR] = {{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f},{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f}};
-float ADSRedited[N_OSC][TOTAL_ADSR] = {{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f},{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f}};
-float ADSRvalues[N_OSC][TOTAL_ADSR] = {{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f},{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f}};
-float ADSRmixValues[2] = {50.0f, 1.0f};
+const int ADSR_DEFAULTS[N_OSC][TOTAL_ADSR] = {{0,10,100,200,70,500},{0,10,100,200,70,500}};
+int ADSRedited[N_OSC][TOTAL_ADSR] = {{0,10,100,200,70,500},{0,10,100,200,70,500}};
+int ADSRvalues[N_OSC][TOTAL_ADSR] = {{0,10,100,200,70,500},{0,10,100,200,70,500}};
+int ADSRmixValues[2] = {50, 1};
 bool adsrUsingDefaults[N_OSC] = {false, false};
 
 struct ADSRparam {
   const char* name;
-  float min;
-  float max;
-  float step; //encoder increment
+  int min;
+  int max;
   const Type type;
 };
 const ADSRparam ADSRpage[PARAMS_PER_PAGE] = {
       //Name, min,    max, encoder increment, type
-    {"DELAY",  0.0f, 2000.0f, 1.0f, INT},      {"ATTACK",  1.0f, 5000.0f, 1.0f, INT},
-    {"ATT LVL",  0.0f, 100.0f, 1.0f, INT},     {"DECAY",  1.0f, 5000.0f, 1.0f, INT},
-    {"SUSTAIN",  0.0f, 100.0f, 1.0f, INT},     {"RELEASE",  1.0f, 8000.0f, 1.0f, INT},
-    {"OSC MIX",  0.0f, 100.0f, 1.0f, INT},     {"DETUNE",  0.0f, 100.0f, 1.0f, INT}
+    {"DELAY",  0, 2000, INT},      {"ATTACK",  1, 5000, INT},
+    {"ATT LVL",  0, 100, INT},     {"DECAY",  1, 5000, INT},
+    {"SUSTAIN",  0, 100, INT},     {"RELEASE",  1, 8000, INT},
+    {"OSC MIX",  0, 100, INT},     {"DETUNE",  0, 100, INT}
 };
 
 struct SyntParam {
   const char* name;
   float min;
   float max;
-  float step; //encoder increment
   const Type type;
 };
 float synthValue[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {  //valores de los encoders
-  {0.0f,120.0f,20.0f,150.0f,    10.0f,3.0f,3.0f,0.0f},
-  {0.0f,80.0f,50.0f,0.0f,       0.0f,50.0f,8.0f,0.0f},
-  {0.0f,0.0f,0.0f,4.0f,         50.0f,0.0f,50.0f,50.0f},
-  {0.0f,0.0f,55.0f,35.0f,       100.0f, 15.0f, 35.0f, 0.0f},
-  {0.0f,0.0f,0.0f,0.0f,         100.0f, 0.0f,0.0f,4.0f},
-  {0.0f,1.0f,0.0f,60.0f,        9.0f,1.0f,100.0f,1.0f},//(float)CHORD_REST
-  {0.0f,60.0f, 0.0f,1.0f,       65.0f,1.0f,0.0f,255.0f},
+  {10.0f,120.0f,20.0f,150.0f,   0.0f,3.0f,3.0f,0.0f}, // Conf
+  {0.0f,80.0f,50.0f,0.0f,       0.0f,50.0f,8.0f,0.0f}, //LFO
+  {0.0f,0.0f,8.0f,12.0f,        50.0f,0.0f,50.0f,50.0f}, //MORPH
+  {0.0f,0.0f,55.0f,35.0f,       100.0f, 15.0f, 35.0f, 0.0f}, //CHORUS
+  {0.0f,0.0f,0.0f,0.0f,         100.0f, 0.0f,0.0f,4.0f},  //CHORD
+  {0.0f,1.0f,0.0f,60.0f,        9.0f,1.0f,100.0f,1.0f}, //SEQ
+  {0.0f,60.0f, 0.0f,1.0f,       65.0f,1.0f,0.0f,255.0f}, //ARP
 };
 const SyntParam parametroPages[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {
       //Name,    min,  max,  encoder increment,   type
   {
-    {"      ",  0.0f, 1.0f, 1.0f, NULO},        {"BPM",  60.0f, 200.0f, 1.0f, INT},
-    {"%PULSE",  10.0f, 90.0f, 1.0f, INT},       {"M GAIN",  10.0f, 300.0f, 1.0f, INT},
-    {"CURVE",  1.0f, 30.0f, 1.0f, INT},         {"N RLEAS",  1.0f, 6.0f, 1.0f, INT},
-    {"WT SIZE",  0.0f, 3.0f, 1.0f, NAME},       {"RAM/PSR",  0.0f, 1.0f, 1.0f, ONOFF},
+    {"CURVE",  1.0f, 30.0f, INT},         {"BPM",  60.0f, 200.0f, INT},
+    {"%PULSE",  10.0f, 90.0f, INT},       {"M GAIN",  10.0f, 300.0f, INT},
+    {"      ",  0.0f, 1.0f, NULO},        {"N RLEAS",  1.0f, 6.0f, INT},
+    {"WT SIZE",  0.0f, 3.0f, NAME},       {"RAM/PSR",  0.0f, 1.0f, ONOFF},
   },
   {
-    {"LFO SHP",  0.0f, 6.0f, 1.0f, NAME},       {"RATE",  10.0f, 200.0f, 1.0f, INT},
-    {"DEPTH",  0.0f, 100.0f, 1.0f, INT},       {"TARGET",  0.0f, 4.0f, 1.0f, NAME},
-    {"ATTACK",  0.0f, 5000.0f, 5.0f, INT},      {"CUTOFF",  1.0f, 200.0f, 1.0f, INT},
-    {"PTCH UP",  1.0f, 32.0f, 1.0f, INT},       {"RESONAN",  0.0f, 100.0f, 1.0f, INT},
+    {"LFO SHP",  0.0f, 6.0f, NAME},       {"RATE",  10.0f, 200.0f, INT},
+    {"DEPTH",  0.0f, 100.0f, INT},        {"TARGET",  0.0f, 4.0f, NAME},
+    {"ATTACK",  0.0f, 5000.0f, INT},      {"CUTOFF",  1.0f, 200.0f, INT},
+    {"PTCH UP",  1.0f, 32.0f, INT},       {"RESONAN",  0.0f, 100.0f, INT},
   },
   {
-    {"GLIDE",  0.0f, 5000.0f, 1.0f, INT},       {"MORPH",  0.0f, 1.0f, 1.0f, ONOFF},
-    {"END A",  0.0f, 49.0f, 1.0f, NAME},        {"END B",  0.0f, 49.0f, 1.0f, NAME},
-    {"MIX",  0.0f, 100.0f, 1.0f, INT},          {"MODE",  0.0f, 3.0f, 1.0f, NAME},
-    {"VEL",  0.0f, 100.0f, 1.0f, INT},          {"DEPTH",  0.0f, 100.0f, 1.0f, INT},
+    {"GLIDE",  0.0f, 5000.0f, INT},       {"MORPH",  0.0f, 1.0f, ONOFF},
+    {"END A",  0.0f, 49.0f, NAME},        {"END B",  0.0f, 49.0f, NAME},
+    {"MIX",  0.0f, 100.0f, INT},          {"MODE",  0.0f, 3.0f, NAME},
+    {"VEL",  0.0f, 100.0f, INT},          {"DEPTH",  0.0f, 100.0f, INT},
   },
   { 
-    {"CHORUS",  0.0f, 1.0f, 1.0f, ONOFF},       {"MODE",  0.0f, 1.0f, 1.0f, NAME},
-    {"RATE",  5.0f, 500.0f, 1.0f, INT},         {"DEPTH",  0.0f, 100.0f, 1.0f, INT},
-    {"BASE",  5.0f, 250.0f, 1.0f, INT},         {"FDBACK",  -85.0f, 85.0f, 1.0f, INT},
-    {"MIX", 0.0f, 100.0f, 1.0f, INT},           {"XOVR%",  0.0f, 100.0f, 1.0f, INT},
+    {"CHORUS",  0.0f, 1.0f, ONOFF},       {"MODE",  0.0f, 1.0f, NAME},
+    {"RATE",  5.0f, 500.0f, INT},         {"DEPTH",  0.0f, 100.0f, INT},
+    {"BASE",  5.0f, 250.0f, INT},         {"FDBACK",  -85.0f, 85.0f, INT},
+    {"MIX", 0.0f, 100.0f, INT},           {"XOVR%",  0.0f, 100.0f, INT},
   },
   {
-    {"CHORD",  0.0f, 1.0f, 1.0f, ONOFF},        {"TYPE",  0.0f, 7.0f, 1.0f, NAME},
-    {"INV",  0.0f, 2.0f, 1.0f, INT},            {"OCT", -1.0f, 1.0f, 1.0f, INT},
-    {"VOL%",  30.0f, 120.0f, 1.0f, INT},        {"SPRD", 0.0f, 100.0f, 1.0f, INT},
-    {"STRM",  0.0f, 100.0f, 1.0f, INT},         {"DENS",  2.0f, 8.0f, 1.0f, INT},
+    {"CHORD",  0.0f, 1.0f, ONOFF},        {"TYPE",  0.0f, 7.0f, NAME},
+    {"INV",  0.0f, 2.0f, INT},            {"OCT", -1.0f, 1.0f, INT},
+    {"VOL%",  30.0f, 120.0f, INT},        {"SPRD", 0.0f, 100.0f, INT},
+    {"STRM",  0.0f, 100.0f, INT},         {"DENS",  2.0f, 8.0f, INT},
   },
   {
-    {"SEQ",  0.0f, 2.0f, 1.0f, NAME},           {"STEP",  1.0f, 16.0 , 1.0f, INT},
-    {"MODE",  0.0f, 2.0f, 1.0f, NAME},          {"ROOT",  24.0f, 96.0f, 1.0f, INT},
-    {"TYPE",  0.0f, 10.0, 1.0f, NAME},          {"BARS",  1.0f, 8.0f, 1.0f, INT},
-    {"VEL%",  20.0f, 120.0f, 1.0f, INT},        {"LENGTH", 0.0f, 9.0f, 1.0f, NAME},
+    {"SEQ",  0.0f, 2.0f, NAME},           {"STEP",  16.0 , 1.0f, INT},
+    {"MODE",  0.0f, 2.0f, NAME},          {"ROOT",  24.0f, 96.0f, INT},
+    {"TYPE",  0.0f, 10.0, NAME},          {"BARS",  1.0f, 8.0f, INT},
+    {"VEL%",  20.0f, 120.0f, INT},        {"LENGTH", 0.0f, 9.0f, NAME},
   },
   {
-    {"ARP",  0.0f, 1.0f, 1.0f, ONOFF},          {"RATE",  10.0f, 200.0f, 1.0f, INT},
-    {"MODE", 0.0f, 7.0f, 1.0f, NAME},           {"OCTAVE",  1.0f, 3.0f, 1.0f, INT},
-    {"GATE",  10.0f, 95.0f, 1.0f, INT},         {"HOLD",  1.0f, 3.0f, 1.0f, NAME},
-    {"SWING", 0.0f, 45.0f, 1.0f, INT},          {"MASK",  1.0f, 255.0f, 1.0f, INT},
+    {"ARP",  0.0f, 1.0f, ONOFF},          {"RATE",  10.0f, 200.0f, INT},
+    {"MODE", 0.0f, 7.0f, NAME},           {"OCTAVE",  1.0f, 3.0f, INT},
+    {"GATE",  10.0f, 95.0f, INT},         {"HOLD",  1.0f, 3.0f, NAME},
+    {"SWING", 0.0f, 45.0f, INT},          {"MASK",  1.0f, 255.0f, INT},
   }
 };
 
@@ -526,7 +524,8 @@ bool suppressUiRefresh = false;
 struct StoredPreset {
   char name[PN_LEN + 1];
   float values[SOUND_PARAM_PAGES][PARAMS_PER_PAGE];
-  float oscAdsr[N_OSC][TOTAL_ADSR];
+  int oscAdsr[N_OSC][TOTAL_ADSR];
+  int oscMix[2];
 };
 
 

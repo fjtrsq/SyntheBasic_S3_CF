@@ -39,7 +39,9 @@ bool presetSaveByName(const char* name) {
     for (uint8_t param = 0; param < TOTAL_ADSR; param++) {
       preset.oscAdsr[osc][param] = ADSRvalues[osc][param];
     }
+    preset.oscMix[osc] = ADSRmixValues[osc];//usa osc para mix / detune
   }
+  
 
   fs::File file = LittleFS.open(presetPathFromName(name), "w");
   if (!file) return false;
@@ -75,6 +77,7 @@ bool presetLoadByName(const char* name) {
     for (uint8_t param = 0; param < TOTAL_ADSR; param++) {
       ADSRvalues[osc][param] = preset.oscAdsr[osc][param];
     }
+    ADSRmixValues[osc] = preset.oscMix[osc];//usa osc para mix / detune
     updateEnvelopeRates(osc);
   }
 
