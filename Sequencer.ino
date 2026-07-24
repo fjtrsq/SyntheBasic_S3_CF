@@ -243,7 +243,7 @@ uint8_t buildSequencerStepNotes(uint8_t step, uint8_t* notesOut, uint8_t maxNote
   if (count == 0) return 0;
   applyChordInversion(intervals, count, min(seqStep.chordInversion, (uint8_t)(count - 1)));
 
-  int spreadSemi = (int)roundf(seqStep.chordSpread * 12.0f);
+  int spreadSemi = seqStep.chordSpread * 12.0f;
   for (uint8_t i = 0; i < count; i++) {
     int noteNumber = (int)seqStep.root + intervals[i] + (seqStep.chordOctaveShift * 12);
     if (i > 0) noteNumber += ((int)i - 1) * spreadSemi;
@@ -288,7 +288,7 @@ void playSequencerChordNotes(uint8_t step, uint8_t velocity) {
   uint8_t newNotes[SEQUENCER_MAX_PLAYED_NOTES] = {0};
   uint8_t noteCount = buildSequencerStepNotes(step, newNotes, SEQUENCER_MAX_PLAYED_NOTES);
   int velocityScaled = constrain((int)roundf(velocity * seqStep.chordVelocityScale), 1, 127);
-  int spreadSemi = (int)roundf(seqStep.chordSpread * 12.0f);
+  int spreadSemi = seqStep.chordSpread * 12.0f;
   uint32_t now = millis();
   
   // Stop old notes that are not in the new chord
@@ -400,10 +400,10 @@ void captureSequencerStepFromMidi(uint8_t velocity) {
     }
   }
 
-  synthValue[5][2] = (float)seqStep.mode;
-  synthValue[5][3] = (float)seqStep.root;
-  synthValue[5][4] = (float)seqStep.chord;
-  synthValue[5][6] = (float)seqStep.velocity;
+  parametroPages[5][2].value = seqStep.mode;
+  parametroPages[5][3].value = seqStep.root;
+  parametroPages[5][4].value = seqStep.chord;
+  parametroPages[5][6].value = seqStep.velocity;
   if (!suppressUiRefresh &&  currentPage == PAGE_SEQ) {
     drawValue(2);
     drawValue(3);
@@ -499,17 +499,17 @@ void syncSequencerScopedValues(uint8_t step) {
   step &= 0xF;
   SequencerStep &seqStep = sequencerSteps[step];
 
-  synthValue[4][2] = (float)seqStep.chordInversion;
-  synthValue[4][3] = (float)seqStep.chordOctaveShift;
-  synthValue[4][4] = seqStep.chordVelocityScale * 100.0f;
-  synthValue[4][5] = seqStep.chordSpread;
-  synthValue[4][6] = (float)seqStep.chordStrumMs;
-  synthValue[4][7] = (float)seqStep.chordDensity;
+  parametroPages[4][2].value = seqStep.chordInversion;
+  parametroPages[4][3].value = seqStep.chordOctaveShift;
+  parametroPages[4][4].value = seqStep.chordVelocityScale;
+  parametroPages[4][5].value = seqStep.chordSpread;
+  parametroPages[4][6].value = seqStep.chordStrumMs;
+  parametroPages[4][7].value = seqStep.chordDensity;
 
-  synthValue[6][1] = seqStep.arpRateHz;
-  synthValue[6][2] = (float)seqStep.arpMode;
-  synthValue[6][3] = (float)seqStep.arpOctaves;
-  synthValue[6][4] = seqStep.arpGate;
-  synthValue[6][6] = seqStep.arpSwing;
-  synthValue[6][7] = (float)seqStep.arpPatternMask;
+  parametroPages[6][1].value = seqStep.arpRateHz;
+  parametroPages[6][2].value = seqStep.arpMode;
+  parametroPages[6][3].value = seqStep.arpOctaves;
+  parametroPages[6][4].value = seqStep.arpGate;
+  parametroPages[6][6].value = seqStep.arpSwing;
+  parametroPages[6][7].value = seqStep.arpPatternMask;
 }

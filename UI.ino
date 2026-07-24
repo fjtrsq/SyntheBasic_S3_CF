@@ -1,22 +1,19 @@
 const char* getParamName(Page page, uint8_t param) {
   if (page == PAGE_ADSR) return ADSRpage[param].name;
-  if (page < SOUND_PARAM_PAGES) return parametroPages[page][param].name;
-  return filePageParams[param].name;
+  else return parametroPages[page][param].name;
 }
 
 Type getParamType(Page page, uint8_t param) {
   if (page == PAGE_ADSR) return ADSRpage[param].type;
-  if (page < SOUND_PARAM_PAGES) return parametroPages[page][param].type;
-  return filePageParams[param].type;
+  else return parametroPages[page][param].type;
 }
 
-float getParamValue(Page page, uint8_t param) {
+int getParamValue(Page page, uint8_t param) {
   if (page == PAGE_ADSR) {
       if (param < TOTAL_ADSR) return ADSRvalues[oscSelect][param];
       return ADSRmixValues[param - TOTAL_ADSR];
   }
-  if (page < SOUND_PARAM_PAGES) return synthValue[page][param];
-  return (float)filePageParams[param].value;
+  else return parametroPages[page][param].value;
 }
 
 const char* getNameValue (uint8_t param, int value){ // page * PARAMS_PER_PAGE + param
@@ -72,8 +69,7 @@ void processEncoders() {
             int32_t rango = 1;
             int32_t acc = 1;
             if (currentPage == PAGE_ADSR) rango = ADSRpage[i].max - ADSRpage[i].min; 
-            else if (currentPage < SOUND_PARAM_PAGES) 
-                  rango = parametroPages[currentPage][i].max - parametroPages[currentPage][i].min;
+            else rango = parametroPages[currentPage][i].max - parametroPages[currentPage][i].min;
 
             if(rango > 15){
               
@@ -104,12 +100,12 @@ void processEncoders() {
   }
 }
 
-void applyPageDefaultsToggle(Page page, const float defaults[PARAMS_PER_PAGE], float edited[PARAMS_PER_PAGE], bool &usingDefaults) {
+void applyPageDefaultsToggle(Page page, const int defaults[PARAMS_PER_PAGE], int edited[PARAMS_PER_PAGE], bool &usingDefaults) {
   applyingPageDefaultsToggle = true;
   if (!usingDefaults) {
     for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) {
-      edited[i] = synthValue[page][i];
-      synthValue[page][i] = defaults[i];
+      edited[i] = parametroPages[page][i].value;
+      parametroPages[page][i].value = defaults[i];
       refreshValue(page, i, 0);
       if (currentPage == page) drawValue(i);
     }
@@ -118,7 +114,7 @@ void applyPageDefaultsToggle(Page page, const float defaults[PARAMS_PER_PAGE], f
   }
   else {
     for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) {
-      synthValue[page][i] = edited[i];
+      parametroPages[page][i].value = edited[i];
       refreshValue(page, i, 0);
       if (currentPage == page) drawValue(i);
     }
@@ -154,24 +150,21 @@ void toggleADSRDefaults(uint8_t osc) {
 void refreshValue(Page page, uint8_t param , int dirAcc){
   uint16_t color = 0;
   if(page < SOUND_PARAM_PAGES) {
-    synthValue[page][param] = constrain(synthValue[page][param] + dirAcc,
+    parametroPages[page][param].value = constrain(parametroPages[page][param].value + dirAcc,
                 parametroPages[page][param].min,parametroPages[page][param].max);
-    const float value = synthValue[page][param];
+    const int value = parametroPages[page][param].value;
     uint8_t pageParam = page * PARAMS_PER_PAGE + param;
     switch (pageParam) {
       //pagina 1 CONFIG currentPage = 0
       case 0:  velocityExponent = value * 0.1f; break;
-      case 1:  sequencerBpm = (uint16_t)roundf(value); break;
+      case 1:  sequencerBpm = (uint16_t)value; break;
       case 2:  varPulse = value * 0.01; 
         regeneratePulseTable(varPulse); 
         break;
       case 3:  masterGain = value * 0.01; break;
-      case 4:   break;
-      case 5:
-        maxReleaseVoices = (uint8_t)roundf(value);
-        synthValue[0][5] = (float)maxReleaseVoices;
-        break;
-      case 6:  { int selectedIndex = roundf(value);
+      case 4:  break;
+      case 5:  maxReleaseVoices = (uint8_t)value; break;
+      case 6:  { int selectedIndex = value;
                 uint16_t selectedSize = TABLE_SIZE_VALUES[selectedIndex]; //tableSizeFromIndex(selectedIndex);
                 changed = selectedSize != tableSize;
                 bool saved = !changed;
@@ -182,7 +175,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                                 selectedSize,
                                 saved ? "guardado, requiere reset HW" : "error NVS");
                 }
-                synthValue[0][6] = saved ? (float)selectedIndex : (float)tableSizeToIndex(tableSize);
+                parametroPages[0][6].value = saved ? selectedIndex : tableSizeToIndex(tableSize);
                 break;
               }
       case 7: { MemoryMode selectedMode = (value > 0.5f) ? MEMORY_INTERNAL : MEMORY_PSRAM;
@@ -195,19 +188,19 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                                 saved ? "guardado, requiere reset HW" : "error NVS");
                   
                 }
-                synthValue[0][7] = (memoryMode == MEMORY_INTERNAL) ? 1.0f : 0.0f;
+                parametroPages[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1.0f : 0.0f;
                 break;
               } 
           
       //pagina 2 LFO currentPage = 1
-      case 8:  lfoWaveform = (LfoWaveform)roundf(value); break;
+      case 8:  lfoWaveform = (LfoWaveform)value; break;
       case 9:  lfoRateHz = value * 0.1f; break;
       case 10: lfoDepth = value * 0.01f; break;
-      case 11: lfoTarget = (LfoTarget)roundf(value); break;
+      case 11: lfoTarget = (LfoTarget)value; break;
       case 12: lfoAttackTime = value * 0.001f; break;
       case 13: cutoffControl = value * 0.1f; 
                filterCutoffHz = cutoffControlToHz(cutoffControl); break;
-      case 14: lfoPitchUpdateSamples = (uint8_t)roundf(value); break;
+      case 14: lfoPitchUpdateSamples = (uint8_t)value; break;
       case 15: filterResonance = value * 0.01f; break;
 
       //pagina 3 GLIDE/MORPH currentPage = 2
@@ -220,26 +213,26 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                Serial.printf("OSC A WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[0]], WAVE_NAMES[oscWaveCacheEndType[0]]);
                Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_NAMES[oscWaveCacheEndType[1]]);
                break;
-      case 18: oscWaveformEnd[0] = (Waveform)roundf(value);
+      case 18: oscWaveformEnd[0] = (Waveform)value;
                color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
                drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, color); 
                leds.setColor(currentPage, RED);
                leds.show(); 
                break;
-      case 19: oscWaveformEnd[1] = (Waveform)roundf(value);
+      case 19: oscWaveformEnd[1] = (Waveform)value;
                color = morphEnabled ? TFT_CYAN : TFT_DARKGREY;
                drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, color); 
                leds.setColor(currentPage, RED);
                leds.show();
                break;
       case 20: morphBase = value * 0.01f; break;
-      case 21: morphMode = (MorphMode)roundf(value); break; 
+      case 21: morphMode = (MorphMode)value; break; 
       case 22: morphRateHz = value * 0.01f; break; 
       case 23: morphDepth = value * 0.01f; break;
       
       //pagina 4 FX CHORUS currentPage = 3
       case 24: modFxEnabled = value >= 0.5f ? 1.0f : 0.0f; break;
-      case 25: modFxMode = (FxMode)roundf(value); break;
+      case 25: modFxMode = (FxMode)value; break;
       case 26: modFxRateHz = value * 0.01f; break;
       case 27: modFxDepthMs = value * 0.1f; break;
       case 28: modFxBaseMs = value * 0.1f; break;
@@ -251,12 +244,12 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 32: if (sequencerState != SEQ_STATE_OFF) break;
                 else{ chordAssistantEnabled = value >= 0.5f; break;}
       case 33: if (sequencerState != SEQ_STATE_OFF) break;
-                else{ chordType = (ChordType)roundf(value); break; }
-      case 34: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordInversion = (uint8_t)roundf(value);
-                else chordInversion = (uint8_t)roundf(value);
+                else{ chordType = (ChordType)value; break; }
+      case 34: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordInversion = (uint8_t)value;
+                else chordInversion = (uint8_t)value;
                 break;
-      case 35: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordOctaveShift = (int8_t)roundf(value);
-                else chordOctaveShift = (int8_t)roundf(value);
+      case 35: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordOctaveShift = (int8_t)value;
+                else chordOctaveShift = (int8_t)value;
                 break;
       case 36: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordVelocityScale = value * 0.01f;
                 else chordVelocityScale = value * 0.01f;
@@ -264,16 +257,16 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 37: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordSpread = value * 0.01f;
                 else chordSpread = value * 0.01f;
                 break;
-      case 38: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordStrumMs = (uint8_t)roundf(value);
-                else chordStrumMs = (uint8_t)roundf(value);
+      case 38: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordStrumMs = (uint8_t)value;
+                else chordStrumMs = (uint8_t)value;
                 break;
-      case 39: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordDensity = (uint8_t)roundf(value);
-                else chordDensity = (uint8_t)roundf(value);
+      case 39: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordDensity = (uint8_t)value;
+                else chordDensity = (uint8_t)value;
                 break;
       
       //pagina 6 SEQUENCER currentPage = 5
       case 40:
-        sequencerState = (SequencerState)roundf(value);
+        sequencerState = (SequencerState)value;
         sequencerEnabled = sequencerState == SEQ_STATE_ON;
         sequencerPlayStep = 0;
         sequencerPlayBar = 1;
@@ -291,26 +284,26 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
         syncSequencerScopedValues(sequencerEditStep);
         break;
       case 41:
-        sequencerEditStep = (uint8_t)roundf(value) - 1;
+        sequencerEditStep = (uint8_t)value - 1;
         if (sequencerState != SEQ_STATE_OFF) syncSequencerScopedValues(sequencerEditStep);
-        synthValue[5][2] = (float)sequencerSteps[sequencerEditStep].mode;
-        synthValue[5][3] = (float)sequencerSteps[sequencerEditStep].root;
-        synthValue[5][4] = (float)sequencerSteps[sequencerEditStep].chord;
-        synthValue[5][5] = (float)sequencerSteps[sequencerEditStep].bars;
-        synthValue[5][6] = (float)sequencerSteps[sequencerEditStep].velocity;
-        synthValue[5][7] = (float)selectedDurationIdx;
+        parametroPages[5][2].value = sequencerSteps[sequencerEditStep].mode;
+        parametroPages[5][3].value = sequencerSteps[sequencerEditStep].root;
+        parametroPages[5][4].value = sequencerSteps[sequencerEditStep].chord;
+        parametroPages[5][5].value = sequencerSteps[sequencerEditStep].bars;
+        parametroPages[5][6].value = sequencerSteps[sequencerEditStep].velocity;
+        parametroPages[5][7].value = selectedDurationIdx;
         if (!suppressUiRefresh && page == PAGE_SEQ) {
           for (uint8_t j = 2; j < 8; j++) drawValue(j);
         }
         break;
-      case 42: sequencerSteps[sequencerEditStep].mode = (SequencerMode)roundf(value);break;  
-      case 43: sequencerSteps[sequencerEditStep].root = (uint8_t)roundf(value); break;
-      case 44: sequencerSteps[sequencerEditStep].chord = (ChordType)roundf(value);
+      case 42: sequencerSteps[sequencerEditStep].mode = (SequencerMode)value;break;  
+      case 43: sequencerSteps[sequencerEditStep].root = (uint8_t)value; break;
+      case 44: sequencerSteps[sequencerEditStep].chord = (ChordType)value;
                 if (sequencerSteps[sequencerEditStep].chord != CHORD_PLAYED) sequencerSteps[sequencerEditStep].playedCount = 0;
                 break;
-      case 45: sequencerSteps[sequencerEditStep].bars = (uint8_t)roundf(value); break;
-      case 46: sequencerSteps[sequencerEditStep].velocity = (uint8_t)roundf(value); break;
-      case 47: selectedDurationIdx = DURATION_PRESETS[(int)roundf(value)];
+      case 45: sequencerSteps[sequencerEditStep].bars = (uint8_t)value; break;
+      case 46: sequencerSteps[sequencerEditStep].velocity = (uint8_t)value; break;
+      case 47: selectedDurationIdx = DURATION_PRESETS[value];
                 sequencerSteps[sequencerEditStep].melodyDurations[MAX_MELODY_NOTES] = selectedDurationIdx;
                 break;
 
@@ -323,91 +316,91 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 49: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpRateHz = value * 0.1f;
                 else arpRateHz = value  * 0.1f;
                 break;
-      case 50: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpMode = (ArpMode)roundf(value);
-                else arpMode = (ArpMode)roundf(value);
+      case 50: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpMode = (ArpMode)value;
+                else arpMode = (ArpMode)value;
                 break;
-      case 51: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpOctaves = (int)roundf(value);
-                else arpOctaves = (int)roundf(value);
+      case 51: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpOctaves = value;
+                else arpOctaves = value;
                 break;
-      case 52: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpGate = value;
+      case 52: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpGate = value * 0.01f;
                 else arpGate = value * 0.01f;
                 break;
       case 53: if (sequencerState != SEQ_STATE_OFF) break;
                 else{
-                  arpHold = (ArpHold)roundf(value);
-                  synthValue[6][5] = (float)arpHold; break;
+                  arpHold = (ArpHold)value;
+                  parametroPages[6][5].value = arpHold; break;
                 }
-      case 54: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpSwing = value;
+      case 54: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpSwing = value * 0.01;
                 else arpSwing = value * 0.01;
                 break;
-      case 55: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpPatternMask = (uint8_t)roundf(value);
-                else arpPatternMask = (int)roundf(value);
+      case 55: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpPatternMask = (uint8_t)value;
+                else arpPatternMask = value;
                 drawExtraValue();
                 break;
-    }
-  }
   
-  //pagina 8 FILES  currentPage = 7
-  else if(page == PAGE_FILE) { 
-    filePageParams[param].value = constrain(filePageParams[param].value + dirAcc,
-      filePageParams[param].min,filePageParams[param].max);
-              
-    switch (param) {
-      case 0: presetSelectFileByIndex(filePageParams[param].value); break;
-      case 1:
-        if (filePageParams[param].value == 1) {
+      //Pagina 8 FILE currentPage 7
+      case 56: presetSelectFileByIndex(parametroPages[PAGE_FILE][param].value); break;
+      case 57:
+        if (parametroPages[PAGE_FILE][param].value == 1) {
           finalizePresetName();
           bool ok = presetLoadByName(presetEditName);
           Serial.printf("Load preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
           setPresetActionFeedback(1, ok ? "OK" : "FAIL");
-          filePageParams[param].value = 0;
+          parametroPages[PAGE_FILE][param].value = 0;
         }
         break;
 
-      case 2:
-        if (filePageParams[param].value == 1) {
+      case 58:
+        if (parametroPages[PAGE_FILE][param].value == 1) {
           finalizePresetName();
           bool ok = presetSaveByName(presetEditName);
           Serial.printf("Save preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
           setPresetActionFeedback(2, ok ? "OK" : "FAIL");
-          filePageParams[param].value = 0;
+          parametroPages[PAGE_FILE][param].value = 0;
           refreshPresetFileList(true);
         }
         break;
-      case 3:
-        if (filePageParams[param].value == 1){
+      case 59:
+        if (parametroPages[PAGE_FILE][param].value == 1){
           setPresetActionFeedback(3, "¿?");
           leds.setColor(currentPage, RED);
           leds.show();
         }
-        if (filePageParams[param].value == 10) {
+        if (parametroPages[PAGE_FILE][param].value == 10) {
           finalizePresetName();
           bool ok = presetDeleteByName(presetEditName);
           Serial.printf("Delete preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
           setPresetActionFeedback(3, ok ? "OK" : "FAIL");
-          filePageParams[param].value = 0;
+          parametroPages[PAGE_FILE][param].value = 0;
           refreshPresetFileList(false);
           leds.setColor(currentPage, GREEN);
           leds.show();
         }
         break;
-      case 4:
-        if (filePageParams[param].value == 1) {
+      case 60:
+        if (parametroPages[PAGE_FILE][param].value == 1){
+          setPresetActionFeedback(3, "¿?");
+          leds.setColor(currentPage, RED);
+          leds.show();
+        }
+        if (parametroPages[PAGE_FILE][param].value == 10) {
           memset(presetEditName, ' ', PN_LEN);
           presetEditName[PN_LEN] = '\0';
           setPresetActionFeedback(4, "CLEAR");
-          filePageParams[param].value = 0;
+          parametroPages[PAGE_FILE][param].value = 0;
+          leds.setColor(currentPage, GREEN);
+          leds.show();
         }
         break;
-      case 5:
-        if (filePageParams[param].value == 1) {
+      case 61:
+        if (parametroPages[PAGE_FILE][param].value == 1) {
           presetInsertSelectedChar(true);
           setPresetActionFeedback(5, "WRITE");
-          filePageParams[param].value = 0;
+          parametroPages[PAGE_FILE][param].value = 0;
         }
         break;
-      case 6: break;
-      case 7: break;
+      case 62: break;
+      case 63: break;
     }
 
   }
@@ -430,13 +423,13 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
 
   if (!applyingPageDefaultsToggle) {
     if (page == PAGE_LFO && page1UsingDefaults) {
-      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page1EditedValues[i] = synthValue[1][i];
+      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page1EditedValues[i] = parametroPages[1][i].value;
       page1UsingDefaults = false;
       if (!suppressUiRefresh && currentPage == PAGE_LFO) drawExtraValue();
     }
     
     else if (page == PAGE_CHORUS && page3UsingDefaults) {
-      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page3EditedValues[i] = synthValue[3][i];
+      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page3EditedValues[i] = parametroPages[3][i].value;
       page3UsingDefaults = false;
       if (!suppressUiRefresh && currentPage == PAGE_CHORUS) drawExtraValue();
     }
@@ -445,12 +438,10 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
 
   if (!suppressUiRefresh) {
     drawValue(param);
-    if (page == PAGE_FILE) {
+    if (page == PAGE_FILE || page == PAGE_ADSR) {
       drawMainVisualization();
     }
-    else if (page == PAGE_ADSR) {
-      drawMainVisualization();
-    }
+
     Serial.printf("Page %d Param %d = %.2f\n", page + 1, param, getParamValue(page, param));
   }
 }
@@ -667,6 +658,11 @@ void processControl(){
   botBlue_ant = botBlue;
 }
 
+void timeOutFile(){
+  flagTime = false;
+  drawValue(pendingParam);
+}
+
 void drawValue(uint8_t i){
   if (!isSequencerScopedControl(currentPage, i)) {
     tft.fillRect((i&3)*80, 28 + ((i>>2)*60), 80, 22, TFT_BLACK);
@@ -677,44 +673,33 @@ void drawValue(uint8_t i){
   char charBuf[2] = {0};
   const char* textValue = nullptr;
   uint8_t pos = 40;
-  float value = getParamValue(currentPage, i);
+  int value = getParamValue(currentPage, i);
   switch(getParamType(currentPage, i)){
-    
-    case FLOAT:
-      snprintf(buf, sizeof(buf), "%5.2f", value);
-      textValue = buf;
-      if(value < 100.00f) pos = 35;
-      break;
     
     case INT:    
       if (currentPage == PAGE_FILE && i == 0 && presetFileCount > 0) {
-        snprintf(buf, sizeof(buf), "%d", ((int)roundf(value)) + 1);
+        snprintf(buf, sizeof(buf), "%d", value + 1);
       }
       else {
-        snprintf(buf, sizeof(buf), "%d", (int)roundf(value));
+        snprintf(buf, sizeof(buf), "%d", value);
       }
       textValue = buf;
       break;
     
-    case F01:
-      snprintf(buf, sizeof(buf), "%d", (int)roundf(value*100));
-      textValue = buf;
-      break;
-
     case ONOFF:
       if (currentPage == PAGE_CONF && i == 7) {
-        textValue = (bool)roundf(value) ? "RAM" : "PSRAM";
+        textValue = (bool)value ? "RAM" : "PSRAM";
       } else {
-        textValue = (bool)roundf(value) ? "ON" : "OFF";
+        textValue = (bool)value ? "ON" : "OFF";
       }
       break;
     
     case NAME:
-      textValue = getNameValue((currentPage * PARAMS_PER_PAGE) + i, (int)roundf(value));
+      textValue = getNameValue((currentPage * PARAMS_PER_PAGE) + i, value);
       break;
 
     case CHARSEL:
-      charBuf[0] = PRESET_CHARS[(int)roundf(value)];
+      charBuf[0] = PRESET_CHARS[value];
       textValue = charBuf;
       break;
 
@@ -723,17 +708,15 @@ void drawValue(uint8_t i){
       break;
 
     case FFILE:
-      if (currentPage == PAGE_FILE &&
-          (i == 1 || i == 2 || i == 3 || i == 4 || i == 5) &&
-          presetActionParam == (int8_t)i &&
-          (int32_t)(presetActionUntil - millis()) > 0) {
+      if ((i > 0 || i < 6) {
         textValue = presetActionLabel;
+        pendingParam = i;
       }
       else {
         textValue = "GO";
       }
-      if(textValue == "GO"){
-        filePageParams[i].value = 0;
+      if(textValue == "GO" && i == 3){
+        parametroPages[PAGE_FILE][i].value = 0;
         leds.setColor(currentPage, GREEN);
         leds.show();
       }
@@ -790,7 +773,7 @@ void drawExtraValue(){
       char nameBuf[PN_LEN + 1];
       strncpy(nameBuf, presetEditName, PN_LEN);
       nameBuf[PN_LEN] = '\0';
-      int pos = constrain(filePageParams[6].value, 0, PN_LEN - 1);
+      int pos = constrain(parametroPages[PAGE_FILE][6].value, 0, PN_LEN - 1);
       char prefix[PN_LEN + 1];
       strncpy(prefix, nameBuf, pos);
       prefix[pos] = '\0';
@@ -851,21 +834,6 @@ void drawLinesADSR(uint8_t osc){
   
   // El total de la pantalla se adaptará al oscilador que tenga la envolvente más larga
   float totalWeights = (sumaOscActual > sumaOscOtro) ? sumaOscActual : sumaOscOtro;
-
-  /* 4. CORRECCIÓN Y AJUSTE: Ancho mínimo dinámico para el Delay y fijos para el resto
-  int minWidthDelay = (L_norm > 0.0f) ? 4 : 0; 
-  int minWidthOtros = 8; 
-  int totalMinWidth = minWidthDelay + (minWidthOtros * 4); 
-  int dynamicWidth = width - totalMinWidth;
-
-  // 5. SOLUCIÓN DEL ERROR: Usamos las variables correctas declaradas arriba
-  // Si L_norm es 0, wL será exactamente 0 píxeles.
-  int wL = (L_norm > 0.0f) ? (minWidthDelay + (int)((L / totalWeights) * dynamicWidth)) : 0;
-  int wA = minWidthOtros + (int)((A / totalWeights) * dynamicWidth);
-  int wD = minWidthOtros + (int)((D / totalWeights) * dynamicWidth);
-  int wS = minWidthOtros + (int)((sustainTime / totalWeights) * dynamicWidth);
-  int wR = minWidthOtros + (int)((R / totalWeights) * dynamicWidth); 
-  */
 
   // 5 Sin minimos
   int wL = (int)((L / totalWeights) * width);
@@ -1005,7 +973,7 @@ void drawPresetFileList(){
     return;
   }
 
-  uint8_t selected = (uint8_t)constrain(filePageParams[0].value, 0, presetFileCount - 1);
+  uint8_t selected = (uint8_t)constrain(parametroPages[PAGE_FILE][0].value, 0, presetFileCount - 1);
   uint8_t pageStart = (selected / pageSize) * pageSize;
 
   for (uint8_t slot = 0; slot < pageSize; slot++) {

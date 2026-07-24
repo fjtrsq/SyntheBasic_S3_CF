@@ -123,10 +123,10 @@ uint8_t midiStatus = 0;
 uint8_t midiData1 = 0;
 bool waitingForData2 = false;
 
-enum Type : uint8_t {FLOAT = 0, INT, F01, ONOFF, NAME, CHARSEL, FFILE, NULO};
+enum Type : uint8_t {INT = 0, ONOFF, NAME, CHARSEL, FFILE, NULO};
 enum Page : uint8_t {PAGE_CONF = 0, PAGE_LFO, PAGE_MORPH, PAGE_CHORUS, PAGE_CHORD, PAGE_SEQ, PAGE_ARP, PAGE_FILE, PAGE_ADSR}; 
 
-const uint8_t SOUND_PARAM_PAGES = 7;
+const uint8_t SOUND_PARAM_PAGES = 8;// incluida PAGE_FILE
 const uint8_t PARAM_PAGES = 9;
 const uint8_t PARAMS_PER_PAGE = 8;
 const uint8_t PN_LEN = 10; //Preset name len
@@ -134,10 +134,10 @@ const uint8_t PN_LEN = 10; //Preset name len
 Page currentPage = PAGE_CONF;
 Page lastPage = PAGE_CONF;
 
-const float PAGE1_DEFAULTS[PARAMS_PER_PAGE] = {0.0f,5.0f,0.3f,0.0f,     0.0f,4.0f,8.0f,0.20f};    //LFO
-const float PAGE3_DEFAULTS[PARAMS_PER_PAGE] = {0.0f, 0.0f, 0.05f, 0.2f, 0.5f, 0.0f, 0.0f, 0.0f};  //Chorus
-float page1EditedValues[PARAMS_PER_PAGE] =    {0.0f,5.0f,0.3f,0.0f,     0.0f,4.0f,8.0f,0.20f};    //LFO
-float page3EditedValues[PARAMS_PER_PAGE] =    {0.0f, 0.0f, 0.05f, 0.2f, 0.5f, 0.0f, 0.0f, 0.0f};  //Chorus
+const int PAGE1_DEFAULTS[PARAMS_PER_PAGE] = {0,80,50,0,       0,50,8,0};    //LFO
+const int PAGE3_DEFAULTS[PARAMS_PER_PAGE] = {0,0,55,35, 100, 15, 35, 0};  //Chorus
+int page1EditedValues[PARAMS_PER_PAGE] =    {0,80,50,0,       0,50,8,0};    //LFO
+int page3EditedValues[PARAMS_PER_PAGE] =    {0,0,55,35, 100, 15, 35, 0};  //Chorus
 bool page1UsingDefaults = false;
 bool page3UsingDefaults = false;
 bool applyingPageDefaultsToggle = false;
@@ -166,79 +166,65 @@ const ADSRparam ADSRpage[PARAMS_PER_PAGE] = {
 
 struct SyntParam {
   const char* name;
-  float min;
-  float max;
-  const Type type;
-};
-float synthValue[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {  //valores de los encoders
-  {10.0f,120.0f,20.0f,150.0f,   0.0f,3.0f,3.0f,0.0f}, // Conf
-  {0.0f,80.0f,50.0f,0.0f,       0.0f,50.0f,8.0f,0.0f}, //LFO
-  {0.0f,0.0f,8.0f,12.0f,        50.0f,0.0f,50.0f,50.0f}, //MORPH
-  {0.0f,0.0f,55.0f,35.0f,       100.0f, 15.0f, 35.0f, 0.0f}, //CHORUS
-  {0.0f,0.0f,0.0f,0.0f,         100.0f, 0.0f,0.0f,4.0f},  //CHORD
-  {0.0f,1.0f,0.0f,60.0f,        9.0f,1.0f,100.0f,1.0f}, //SEQ
-  {0.0f,60.0f, 0.0f,1.0f,       65.0f,1.0f,0.0f,255.0f}, //ARP
-};
-const SyntParam parametroPages[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {
-      //Name,    min,  max,  encoder increment,   type
-  {
-    {"CURVE",  1.0f, 30.0f, INT},         {"BPM",  60.0f, 200.0f, INT},
-    {"%PULSE",  10.0f, 90.0f, INT},       {"M GAIN",  10.0f, 300.0f, INT},
-    {"      ",  0.0f, 1.0f, NULO},        {"N RLEAS",  1.0f, 6.0f, INT},
-    {"WT SIZE",  0.0f, 3.0f, NAME},       {"RAM/PSR",  0.0f, 1.0f, ONOFF},
-  },
-  {
-    {"LFO SHP",  0.0f, 6.0f, NAME},       {"RATE",  10.0f, 200.0f, INT},
-    {"DEPTH",  0.0f, 100.0f, INT},        {"TARGET",  0.0f, 4.0f, NAME},
-    {"ATTACK",  0.0f, 5000.0f, INT},      {"CUTOFF",  1.0f, 200.0f, INT},
-    {"PTCH UP",  1.0f, 32.0f, INT},       {"RESONAN",  0.0f, 100.0f, INT},
-  },
-  {
-    {"GLIDE",  0.0f, 5000.0f, INT},       {"MORPH",  0.0f, 1.0f, ONOFF},
-    {"END A",  0.0f, 49.0f, NAME},        {"END B",  0.0f, 49.0f, NAME},
-    {"MIX",  0.0f, 100.0f, INT},          {"MODE",  0.0f, 3.0f, NAME},
-    {"VEL",  0.0f, 100.0f, INT},          {"DEPTH",  0.0f, 100.0f, INT},
-  },
-  { 
-    {"CHORUS",  0.0f, 1.0f, ONOFF},       {"MODE",  0.0f, 1.0f, NAME},
-    {"RATE",  5.0f, 500.0f, INT},         {"DEPTH",  0.0f, 100.0f, INT},
-    {"BASE",  5.0f, 250.0f, INT},         {"FDBACK",  -85.0f, 85.0f, INT},
-    {"MIX", 0.0f, 100.0f, INT},           {"XOVR%",  0.0f, 100.0f, INT},
-  },
-  {
-    {"CHORD",  0.0f, 1.0f, ONOFF},        {"TYPE",  0.0f, 7.0f, NAME},
-    {"INV",  0.0f, 2.0f, INT},            {"OCT", -1.0f, 1.0f, INT},
-    {"VOL%",  30.0f, 120.0f, INT},        {"SPRD", 0.0f, 100.0f, INT},
-    {"STRM",  0.0f, 100.0f, INT},         {"DENS",  2.0f, 8.0f, INT},
-  },
-  {
-    {"SEQ",  0.0f, 2.0f, NAME},           {"STEP",  16.0 , 1.0f, INT},
-    {"MODE",  0.0f, 2.0f, NAME},          {"ROOT",  24.0f, 96.0f, INT},
-    {"TYPE",  0.0f, 10.0, NAME},          {"BARS",  1.0f, 8.0f, INT},
-    {"VEL%",  20.0f, 120.0f, INT},        {"LENGTH", 0.0f, 9.0f, NAME},
-  },
-  {
-    {"ARP",  0.0f, 1.0f, ONOFF},          {"RATE",  10.0f, 200.0f, INT},
-    {"MODE", 0.0f, 7.0f, NAME},           {"OCTAVE",  1.0f, 3.0f, INT},
-    {"GATE",  10.0f, 95.0f, INT},         {"HOLD",  1.0f, 3.0f, NAME},
-    {"SWING", 0.0f, 45.0f, INT},          {"MASK",  1.0f, 255.0f, INT},
-  }
-};
-
-struct FileParam {
-  const char* name;
   int value;
   int min;
   int max;
-  
   const Type type;
 };
-FileParam filePageParams[PARAMS_PER_PAGE] = {
-  {"FILE", 0, 0, 0,  INT},       {"LOAD", 0, 0, 1,  FFILE},
-  {"SAVE", 0, 0, 1,  FFILE},     {"DEL", 0, 0, 10,  FFILE},
-  {"CLEAR", 0, 0, 1,  FFILE},    {"WRITE", 0, 0, 1,  FFILE},
-  {"POS", 0, 0, PN_LEN-1,  INT}, {"CHAR", 1, 0, 38,  CHARSEL},
+
+SyntParam parametroPages[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {
+      //Name,    min,  max,  encoder increment,   type
+  {
+    {"CURVE", 10,  1, 30, INT},       {"BPM", 120, 60, 200, INT},
+    {"%PULSE", 20, 10, 90, INT},      {"M GAIN", 150, 10, 300, INT},
+    {"      ", 0, 0, 1, NULO},        {"N RLEAS", 3, 1, 6, INT},
+    {"WT SIZE", 3, 0, 3, NAME},       {"RAM/PSR", 0,  0, 1, ONOFF},
+  },
+  {
+    {"LFO SHP", 0, 0, 6, NAME},       {"RATE", 80, 10, 200, INT},
+    {"DEPTH", 50, 0, 100, INT},       {"TARGET", 0, 0, 4, NAME},
+    {"ATTACK", 0, 0, 5000, INT},      {"CUTOFF", 50, 1, 200, INT},
+    {"PTCH UP", 8, 1, 32, INT},       {"RESONAN", 0, 0, 100, INT},
+  },
+  {
+    {"GLIDE", 0, 0, 5000, INT},       {"MORPH", 0, 0, 1, ONOFF},
+    {"END A", 8, 0, 49, NAME},        {"END B", 12, 0, 49, NAME},
+    {"MIX", 50, 0, 100, INT},         {"MODE", 0, 0, 3, NAME},
+    {"VEL", 50, 0, 100, INT},         {"DEPTH", 50, 0, 100, INT},
+  },
+  { 
+    {"CHORUS", 0, 0, 1, ONOFF},       {"MODE", 0, 0, 1, NAME},
+    {"RATE", 55, 5, 500, INT},        {"DEPTH", 35, 0, 100, INT},
+    {"BASE", 100, 5, 250, INT},       {"FDBACK", 15, -85, 85, INT},
+    {"MIX", 35, 0, 100, INT},         {"XOVR%", 0, 0, 100, INT},
+  },
+  {
+    {"CHORD", 0, 0, 1, ONOFF},        {"TYPE", 0, 0, 7, NAME},
+    {"INV", 0, 0, 2, INT},            {"OCT", 0, -1, 1, INT},
+    {"VOL%", 100, 30, 120, INT},      {"SPRD", 0, 0, 100, INT},
+    {"STRM", 0, 0, 100, INT},         {"DENS", 4, 2, 8, INT},
+  },
+  {
+    {"SEQ", 0, 0, 2, NAME},           {"STEP", 1, 1 , 16, INT},
+    {"MODE", 0, 0, 2, NAME},          {"ROOT", 60, 24, 96, INT},
+    {"TYPE", 9, 0, 10, NAME},         {"BARS", 1, 1, 8, INT},
+    {"VEL%", 100, 20, 120, INT},      {"LENGTH", 1, 0, 9, NAME},
+  },
+  {
+    {"ARP", 0, 0, 1, ONOFF},          {"RATE", 60, 10, 200, INT},
+    {"MODE", 0, 0, 7, NAME},          {"OCTAVE", 1, 1, 3, INT},
+    {"GATE", 61, 10, 95, INT},        {"HOLD", 1, 1, 3, NAME},
+    {"SWING", 0, 0, 45, INT},         {"MASK", 255, 1, 255, INT},
+  },
+  {
+    {"FILE", 0, 0, 0,  INT},        {"LOAD", 0, 0, 1,  FFILE},
+    {"SAVE", 0, 0, 1,  FFILE},      {"DEL", 0, 0, 10,  FFILE},
+    {"CLEAR", 0, 0, 10,  FFILE},    {"WRITE", 0, 0, 1,  FFILE},
+    {"POS", 0, 0, PN_LEN-1,  INT},  {"CHAR", 1, 0, 38,  CHARSEL}
+  }
 };
+
+
 
 const char* WAVE_LONG_NAMES[] = {"SAW", "SINE", "TRIANGLE", "SQUARE", "PULSE", "SUPER SAW", "ORGAN", "CRUSH", "DRIVE WARM",
       "SINE EXP", "SAW EXP", "RECTIFIED", "CHEBYSHEV", "FM CLASIC", "FM METAL", "FM INDUST", "FM CRISTAL", "FM FEEDBACK", "VOCAL AA",
@@ -515,6 +501,7 @@ uint32_t presetStatusUntil = 0;
 int8_t presetActionParam = -1;
 char presetActionLabel[8] = "";
 uint32_t presetActionUntil = 0;
+uint8_t pendingParam = 0;
 const uint8_t MAX_PRESET_FILES = 100;
 char presetFileNames[MAX_PRESET_FILES][PN_LEN + 1] = {{0}};
 uint8_t presetFileCount = 0;
@@ -1407,11 +1394,11 @@ void setup() {
     Serial.println("[MEM] PSRAM no detectada, usando RAM interna");
   }
   loadMemoryModeFromNvs();
-  synthValue[0][7] = (memoryMode == MEMORY_INTERNAL) ? 1.0f : 0.0f;
+  parametroPages[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1 : 0;
   Serial.printf("[MEM] Modo reserva buffers: %s\n", memoryMode == MEMORY_INTERNAL ? "RAM interna primero" : "AUTO (PSRAM primero)");
 
   loadTableSizeFromNvs();
-  synthValue[0][6] = (float)tableSizeToIndex(tableSize);
+  parametroPages[0][6].value = (float)tableSizeToIndex(tableSize);
   Serial.printf("[WAV] TABLE_SIZE: %u (bits=%u fracBits=%u)\n", tableSize, tableBits, tableFracBits);
 
   if (!initAudioMemory()) {
@@ -1538,5 +1525,8 @@ void loop() {
   if (updateEnc) processEncoders();
   if (updateBtn) processButtons();
   processControl();
+  if(flagTime) {
+    if(presetActionUntil - millis() > 0)timeOutFile();
+  }  
   refreshAudioScope();
 }

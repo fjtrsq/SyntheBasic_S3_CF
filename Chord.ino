@@ -92,7 +92,7 @@ void playChordFromRoot(uint8_t rootNote, uint8_t velocity) {
   applyChordInversion(intervals, noteCount, min(chordInversion, (uint8_t)(noteCount - 1)));
 
   int velocityScaled = constrain((int)roundf(velocity * chordVelocityScale), 1, 127);
-  int spreadSemi = (int)roundf(chordSpread * 12.0f);
+  int spreadSemi = chordSpread * 12.0f;
   uint32_t now = millis();
 
   for (uint8_t i = 0; i < noteCount; i++) {
