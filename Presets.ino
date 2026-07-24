@@ -66,7 +66,7 @@ bool presetLoadByName(const char* name) {
   for (uint8_t page = 0; page < SOUND_PARAM_PAGES; page++) {
     for (uint8_t param = 0; param < PARAMS_PER_PAGE; param++) {
       synthValue[page][param] = preset.values[page][param];
-      refreshValue(page, param);
+      refreshValue((Page)page, param, 0);
     }
   }
   suppressUiRefresh = false;
@@ -75,9 +75,8 @@ bool presetLoadByName(const char* name) {
     for (uint8_t param = 0; param < TOTAL_ADSR; param++) {
       ADSRvalues[osc][param] = preset.oscAdsr[osc][param];
     }
+    updateEnvelopeRates(osc);
   }
-
-  updateEnvelopeRates();
 
   return true;
 }
@@ -136,7 +135,6 @@ void refreshPresetFileList(bool keepCurrentSelection) {
   if (!root || !root.isDirectory()) {
     filePageParams[0].min = 0;
     filePageParams[0].max = 0;
-    filePageParams[0].step = 1;
     filePageParams[0].value = 0;
     presetSelectFileByIndex(0);
     return;
@@ -169,7 +167,6 @@ void refreshPresetFileList(bool keepCurrentSelection) {
   if (presetFileCount == 0) {
     filePageParams[0].min = 0;
     filePageParams[0].max = 0;
-    filePageParams[0].step = 1;
     filePageParams[0].value = 0;
     presetSelectFileByIndex(0);
     return;
@@ -177,7 +174,6 @@ void refreshPresetFileList(bool keepCurrentSelection) {
 
   filePageParams[0].min = 0;
   filePageParams[0].max = presetFileCount - 1;
-  filePageParams[0].step = 1;
 
   int selectedIndex = (int)roundf(filePageParams[0].value);
   if (keepCurrentSelection) {
@@ -198,11 +194,6 @@ void refreshPresetFileList(bool keepCurrentSelection) {
   presetSelectFileByIndex(selectedIndex);
 }
 
-void setPresetStatus(const char* status, uint16_t ms = 1200) {
-  strncpy(presetStatus, status, sizeof(presetStatus) - 1);
-  presetStatus[sizeof(presetStatus) - 1] = '\0';
-  presetStatusUntil = millis() + ms;
-}
 
 void setPresetActionFeedback(uint8_t param, const char* label, uint16_t ms = 1200) {
   presetActionParam = (int8_t)param;

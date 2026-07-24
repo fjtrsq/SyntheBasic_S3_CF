@@ -30,7 +30,7 @@ void noteOn(uint8_t note, uint8_t velocity) {
 
   for (uint8_t osc = 0; osc < N_OSC; osc++) {
     voices[voiceIndex].envLevel[osc] = 0.0f;
-    voices[voiceIndex].envDelaySamples[osc] = (uint32_t)(ADSRvalues[osc][ADSR_DELAY] * SAMPLE_RATE);
+    voices[voiceIndex].envDelaySamples[osc] = (uint32_t)(delayTime[osc] * SAMPLE_RATE);
     voices[voiceIndex].envState[osc] = (voices[voiceIndex].envDelaySamples[osc] > 0) ? ENV_DELAY : ENV_ATTACK;
   }
   voices[voiceIndex].velocityGain = velocityGain;

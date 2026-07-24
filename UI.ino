@@ -1,37 +1,28 @@
-const char* getParamName(uint8_t page, uint8_t param) {
-  if (page == ADSR_PARAM_PAGE) return ADSRpage[param].name;
+const char* getParamName(Page page, uint8_t param) {
+  if (page == PAGE_ADSR) return ADSRpage[param].name;
   if (page < SOUND_PARAM_PAGES) return parametroPages[page][param].name;
   return filePageParams[param].name;
 }
 
-Type getParamType(uint8_t page, uint8_t param) {
-  if (page == ADSR_PARAM_PAGE) return ADSRpage[param].type;
+Type getParamType(Page page, uint8_t param) {
+  if (page == PAGE_ADSR) return ADSRpage[param].type;
   if (page < SOUND_PARAM_PAGES) return parametroPages[page][param].type;
   return filePageParams[param].type;
 }
 
-float getParamValue(uint8_t page, uint8_t param) {
-  if (page == ADSR_PARAM_PAGE && param < TOTAL_ADSR) {
-    float value = ADSRvalues[oscSelect][param];
-    if (param == ADSR_DELAY || param == ATTACK || param == DECAY || param == RELEASE) return value * 1000.0f;
-    if (param == ATTACK_LEVEL || param == SUSTAIN) return value * 100.0f;
-    return value;
+float getParamValue(Page page, uint8_t param) {
+  if (page == PAGE_ADSR) {
+      if (param < TOTAL_ADSR) return ADSRvalues[oscSelect][param];
+      return ADSRmixValues[param - TOTAL_ADSR];
   }
-  if (page == ADSR_PARAM_PAGE && param == 6) return synthValue[0][0] * 100.0f;
-  if (page == ADSR_PARAM_PAGE && param == 7) return synthValue[0][1] * 100.0f;
   if (page < SOUND_PARAM_PAGES) return synthValue[page][param];
   return (float)filePageParams[param].value;
-}
-
-int getParamStep(uint8_t page, uint8_t param) {
-  if (page == FILE_PARAM_PAGE) return max(1, filePageParams[param].step);
-  return 0;
 }
 
 const char* getNameValue (uint8_t param, int value){ // page * PARAMS_PER_PAGE + param
   switch(param){
     case 6:   return TABLE_SIZES[value]; break;
-    case 8:  return LFO_SHAPE_NAMES[value]; break;
+    case 8:   return LFO_SHAPE_NAMES[value]; break;
     case 11:  return LFO_TARGET_NAMES[value]; break;
     case 18:  return WAVE_NAMES[value];break;
     case 19:  return WAVE_NAMES[value];break;
@@ -40,6 +31,8 @@ const char* getNameValue (uint8_t param, int value){ // page * PARAMS_PER_PAGE +
     case 33:  return CHORD_TYPE_NAMES[value]; break;
     case 40:  return SEQ_STATE_NAMES[value]; break;
     case 42:  return SEQ_MODE_NAMES[value]; break;
+    case 44:  return CHORD_TYPE_NAMES[value]; break;
+    case 47:  return DURATION_NAMES[value]; break;
     case 50:  return ARP_MODE_NAMES[value]; break; 
     case 53:  return ARP_HOLD_NAMES[value]; break;
     default:  return "ERROR"; break;
@@ -74,45 +67,33 @@ void processEncoders() {
           subSteps[i] += delta;
 
           if (abs(subSteps[i]) >= 4) {
-
             unsigned long diff = now - lastClickTime[i];
             lastClickTime[i] = now;
+            int32_t rango = 1;
+            int32_t acc = 1;
+            if (currentPage == PAGE_ADSR) rango = ADSRpage[i].max - ADSRpage[i].min; 
+            else if (currentPage < SOUND_PARAM_PAGES) 
+                  rango = parametroPages[currentPage][i].max - parametroPages[currentPage][i].min;
 
-            int acc = (diff < 80) ? (1 + (80 - diff) / 8) : 1;
-            if (acc > 10) acc = 10;
+            if(rango > 15){
+              
+              if (diff < 80) {
+                  int32_t factor = 80 - diff; 
+                  int32_t factorCuadratico = factor * factor; 
+                  // Escalado al ~10% del rango del encoder específico 'i'
+                  int32_t saltoDinamico = (factorCuadratico * rango) / 64000;
+                  acc += saltoDinamico;
+              }
 
+              // Límite de seguridad individual (15% máximo de su propio rango)
+              int32_t accMaximo = (rango * 15) / 100; 
+              if (acc > accMaximo) acc = accMaximo;
+            }
+            if (acc < 1) acc = 1;
             
             int direccion = (subSteps[i] > 0) ? -1 : 1;
 
-            if(currentPage == FILE_PARAM_PAGE){
-              int step = getParamStep(currentPage, i);
-              filePageParams[i].value = constrain(
-                filePageParams[i].value + direccion * step,
-                filePageParams[i].min,
-                filePageParams[i].max
-              );
-              refreshValue(currentPage, i);
-            }
-            else if(currentPage == ADSR_PARAM_PAGE){
-              float uiValue = constrain(
-                getParamValue(currentPage, i) + (direccion * acc * ADSRpage[i].step),
-                ADSRpage[i].min,
-                ADSRpage[i].max
-              );
-              if (i < TOTAL_ADSR) ADSRvalues[oscSelect][i] = uiValue;
-              else if (i == 6 || i == 7) synthValue[0][(i == 6) ? 0 : 1] = uiValue;
-              refreshValue(currentPage, i);
-            }
-            
-            else {
-              synthValue[currentPage][i] = constrain(
-                synthValue[currentPage][i] + (direccion * acc * parametroPages[currentPage][i].step),
-                parametroPages[currentPage][i].min,
-                parametroPages[currentPage][i].max
-              );
-              refreshValue(currentPage, i);
-            }
-
+            refreshValue(currentPage, i, (int)(direccion * acc));
             subSteps[i] = 0;
           }
         }
@@ -123,13 +104,13 @@ void processEncoders() {
   }
 }
 
-void applyPageDefaultsToggle(uint8_t page, const float defaults[PARAMS_PER_PAGE], float edited[PARAMS_PER_PAGE], bool &usingDefaults) {
+void applyPageDefaultsToggle(Page page, const float defaults[PARAMS_PER_PAGE], float edited[PARAMS_PER_PAGE], bool &usingDefaults) {
   applyingPageDefaultsToggle = true;
   if (!usingDefaults) {
     for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) {
       edited[i] = synthValue[page][i];
       synthValue[page][i] = defaults[i];
-      refreshValue(page, i);
+      refreshValue(page, i, 0);
       if (currentPage == page) drawValue(i);
     }
     usingDefaults = true;
@@ -138,7 +119,7 @@ void applyPageDefaultsToggle(uint8_t page, const float defaults[PARAMS_PER_PAGE]
   else {
     for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) {
       synthValue[page][i] = edited[i];
-      refreshValue(page, i);
+      refreshValue(page, i, 0);
       if (currentPage == page) drawValue(i);
     }
     usingDefaults = false;
@@ -147,29 +128,54 @@ void applyPageDefaultsToggle(uint8_t page, const float defaults[PARAMS_PER_PAGE]
   applyingPageDefaultsToggle = false;
 }
 
-void refreshValue(uint8_t page, uint8_t param){
-  
+void toggleADSRDefaults(uint8_t osc) {
+  if (!adsrUsingDefaults[osc]) {
+    // Guardar los valores actuales editados y cargar los valores por defecto
+    for (uint8_t i = 0; i < TOTAL_ADSR; i++) {
+      ADSRedited[osc][i] = ADSRvalues[osc][i];
+      ADSRvalues[osc][i] = ADSR_DEFAULTS[osc][i];
+    }
+    adsrUsingDefaults[osc] = true;
+    Serial.printf("Osc %d ADSR defaults ON\n", osc);
+  } 
+  else {
+    // Restaurar los valores que el usuario había editado
+    for (uint8_t i = 0; i < TOTAL_ADSR; i++) {
+      ADSRvalues[osc][i] = ADSRedited[osc][i];
+    }
+    adsrUsingDefaults[osc] = false;
+    Serial.printf("Osc %d ADSR defaults OFF\n", osc);
+  }
+
+  // Redibujar la pantalla o la sección ADSR para ver los cambios inmediatamente
+  drawMainVisualization(); 
+}
+
+void refreshValue(Page page, uint8_t param , int dirAcc){
+  uint16_t color = 0;
   if(page < SOUND_PARAM_PAGES) {
+    synthValue[page][param] = constrain(synthValue[page][param] + (dirAcc * parametroPages[page][param].step),
+                parametroPages[page][param].min,parametroPages[page][param].max);
     const float value = synthValue[page][param];
     uint8_t pageParam = page * PARAMS_PER_PAGE + param;
     switch (pageParam) {
       //pagina 1 CONFIG currentPage = 0
-      case 0:  oscMix = value; break;
-      case 1:  detuneAmount = value * 0.01f; break;
-      case 2:  varPulse = value; 
+      case 0:  break;
+      case 1:  sequencerBpm = (uint16_t)roundf(value); break;
+      case 2:  varPulse = value * 0.01; 
         regeneratePulseTable(varPulse); 
         break;
-      case 3:  masterGain = value; break;
-      case 4:  velocityExponent = value; break;
+      case 3:  masterGain = value * 0.01; break;
+      case 4:  velocityExponent = value * 0.1f; break;
       case 5:
-        maxReleaseVoices = (uint8_t)constrain((int)roundf(value), 1, 6);
+        maxReleaseVoices = (uint8_t)roundf(value);
         synthValue[0][5] = (float)maxReleaseVoices;
         break;
-      case 6:  { int selectedIndex = constrain((int)roundf(value), 0, TABLE_SIZE_COUNT - 1);
-                uint16_t selectedSize = tableSizeFromIndex(selectedIndex);
-                bool sizeChanged = selectedSize != tableSize;
-                bool saved = !sizeChanged;
-                if (sizeChanged) {
+      case 6:  { int selectedIndex = roundf(value);
+                uint16_t selectedSize = TABLE_SIZE_VALUES[selectedIndex]; //tableSizeFromIndex(selectedIndex);
+                changed = selectedSize != tableSize;
+                bool saved = !changed;
+                if (changed) {
                   saved = saveTableSizeToNvs(selectedSize);
                   drawExtraValue();
                   Serial.printf("[WAV] Cambio TABLE_SIZE -> %u (%s)\n",
@@ -179,9 +185,9 @@ void refreshValue(uint8_t page, uint8_t param){
                 synthValue[0][6] = saved ? (float)selectedIndex : (float)tableSizeToIndex(tableSize);
                 break;
               }
-      case 7: { MemoryMode selectedMode = value >= 0.5f ? MEMORY_INTERNAL : MEMORY_PSRAM;
-                bool modeChanged = selectedMode != memoryMode;
-                if (modeChanged) {
+      case 7: { MemoryMode selectedMode = (value > 0.5f) ? MEMORY_INTERNAL : MEMORY_PSRAM;
+                changed = selectedMode != memoryMode;
+                if (changed) {
                   bool saved = saveMemoryModeToNvs(selectedMode);
                   drawExtraValue();
                   Serial.printf("[MEM] Cambio modo memoria -> %s (%s)\n",
@@ -195,79 +201,79 @@ void refreshValue(uint8_t page, uint8_t param){
           
       //pagina 2 LFO currentPage = 1
       case 8:  lfoWaveform = (LfoWaveform)roundf(value); break;
-      case 9:  lfoRateHz = value; break;
-      case 10: lfoDepth = value; break;
+      case 9:  lfoRateHz = value * 0.1f; break;
+      case 10: lfoDepth = value * 0.01f; break;
       case 11: lfoTarget = (LfoTarget)roundf(value); break;
       case 12: lfoAttackTime = value * 0.001f; break;
-      case 13: cutoffControl = value; filterCutoffHz = cutoffControlToHz(cutoffControl); break;
-      case 14:
-        lfoPitchUpdateSamples = (uint8_t)constrain((int)roundf(value), 1, 32);
-        synthValue[1][6] = (float)lfoPitchUpdateSamples;
-        break;
-      case 15: filterResonance = value; break;
+      case 13: cutoffControl = value * 0.1f; 
+               filterCutoffHz = cutoffControlToHz(cutoffControl); break;
+      case 14: lfoPitchUpdateSamples = (uint8_t)roundf(value); break;
+      case 15: filterResonance = value * 0.01f; break;
 
       //pagina 3 GLIDE/MORPH currentPage = 2
-      case 16: glideTime = value; break;
-      case 17: morphEnabled = value >= 0.5f ? 1.0f : 0.0f; 
+      case 16: glideTime = value * 0.001f; break;
+      case 17: morphEnabled = value >= 0.5f ? 1.0f : 0.0f;
+               color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
+               drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, color);
+               color = morphEnabled ? TFT_CYAN : TFT_DARKGREY;
+               drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, color);
                Serial.printf("OSC A WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[0]], WAVE_NAMES[oscWaveCacheEndType[0]]);
                Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_NAMES[oscWaveCacheEndType[1]]);
                break;
       case 18: oscWaveformEnd[0] = (Waveform)roundf(value);
-               drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, TFT_YELLOW); 
+               color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
+               drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, color); 
                leds.setColor(currentPage, RED);
                leds.show(); 
                break;
       case 19: oscWaveformEnd[1] = (Waveform)roundf(value);
-               drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, TFT_CYAN); 
+               color = morphEnabled ? TFT_CYAN : TFT_DARKGREY;
+               drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, color); 
                leds.setColor(currentPage, RED);
                leds.show();
                break;
-      case 20: morphBase = value; break;
+      case 20: morphBase = value * 0.01f; break;
       case 21: morphMode = (MorphMode)roundf(value); break; 
-      case 22: morphRateHz = value; break; 
-      case 23: morphDepth = value; break;
+      case 22: morphRateHz = value * 0.01f; break; 
+      case 23: morphDepth = value * 0.01f; break;
       
       //pagina 4 FX CHORUS currentPage = 3
       case 24: modFxEnabled = value >= 0.5f ? 1.0f : 0.0f; break;
       case 25: modFxMode = (FxMode)roundf(value); break;
-      case 26: modFxRateHz = value; break;
-      case 27: modFxDepthMs = value; break;
-      case 28: modFxBaseMs = value; break;
-      case 29: modFxFeedback = value; break;
-      case 30: modFxMix = value; break;
+      case 26: modFxRateHz = value * 0.01f; break;
+      case 27: modFxDepthMs = value * 0.1f; break;
+      case 28: modFxBaseMs = value * 0.1f; break;
+      case 29: modFxFeedback = value * 0.01f; break;
+      case 30: modFxMix = value * 0.01; break;
       case 31: modFxStereo = value * 0.01f; break;
   
       //pagina 5 CHORD  currentPage = 4
-      case 32: chordAssistantEnabled = value >= 0.5f; break;
-      case 33: chordType = (ChordType)constrain((int)roundf(value), 0, CHORD_PLAYED - 1); break;
-      case 34:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordInversion = (uint8_t)constrain((int)roundf(value), 0, 2);
-        else chordInversion = (uint8_t)constrain((int)roundf(value), 0, 2);
-        break;
-      case 35:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordOctaveShift = (int8_t)constrain((int)roundf(value), -1, 1);
-        else chordOctaveShift = (int8_t)constrain((int)roundf(value), -1, 1);
-        break;
-      case 36:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordVelocityScale = constrain(value / 100.0f, 0.25f, 1.25f);
-        else chordVelocityScale = constrain(value / 100.0f, 0.25f, 1.25f);
-        break;
-      case 37:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordSpread = constrain(value, 0.0f, 1.0f);
-        else chordSpread = constrain(value, 0.0f, 1.0f);
-        break;
-      case 38:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordStrumMs = (uint8_t)constrain((int)roundf(value), 0, 60);
-        else chordStrumMs = (uint8_t)constrain((int)roundf(value), 0, 60);
-        break;
-      case 39:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordDensity = (uint8_t)constrain((int)roundf(value), 2, 4);
-        else chordDensity = (uint8_t)constrain((int)roundf(value), 2, 4);
-        break;
+      case 32: if (sequencerState != SEQ_STATE_OFF) break;
+                else{ chordAssistantEnabled = value >= 0.5f; break;}
+      case 33: if (sequencerState != SEQ_STATE_OFF) break;
+                else{ chordType = (ChordType)roundf(value); break; }
+      case 34: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordInversion = (uint8_t)roundf(value);
+                else chordInversion = (uint8_t)roundf(value);
+                break;
+      case 35: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordOctaveShift = (int8_t)roundf(value);
+                else chordOctaveShift = (int8_t)roundf(value);
+                break;
+      case 36: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordVelocityScale = value * 0.01f;
+                else chordVelocityScale = value * 0.01f;
+                break;
+      case 37: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordSpread = value * 0.01f;
+                else chordSpread = value * 0.01f;
+                break;
+      case 38: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordStrumMs = (uint8_t)roundf(value);
+                else chordStrumMs = (uint8_t)roundf(value);
+                break;
+      case 39: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].chordDensity = (uint8_t)roundf(value);
+                else chordDensity = (uint8_t)roundf(value);
+                break;
       
       //pagina 6 SEQUENCER currentPage = 5
       case 40:
-        sequencerState = (SequencerState)constrain((int)roundf(value), 0, SEQ_STATE_COUNT - 1);
+        sequencerState = (SequencerState)roundf(value);
         sequencerEnabled = sequencerState == SEQ_STATE_ON;
         sequencerPlayStep = 0;
         sequencerPlayBar = 1;
@@ -285,74 +291,67 @@ void refreshValue(uint8_t page, uint8_t param){
         syncSequencerScopedValues(sequencerEditStep);
         break;
       case 41:
-        sequencerEditStep = (uint8_t)constrain((int)roundf(value) - 1, 0, stepsForSeq - 1);
+        sequencerEditStep = (uint8_t)roundf(value) - 1;
         if (sequencerState != SEQ_STATE_OFF) syncSequencerScopedValues(sequencerEditStep);
         synthValue[5][2] = (float)sequencerSteps[sequencerEditStep].mode;
         synthValue[5][3] = (float)sequencerSteps[sequencerEditStep].root;
         synthValue[5][4] = (float)sequencerSteps[sequencerEditStep].chord;
         synthValue[5][5] = (float)sequencerSteps[sequencerEditStep].bars;
         synthValue[5][6] = (float)sequencerSteps[sequencerEditStep].velocity;
-        synthValue[5][7] = (float)sequencerBpm;
-        if (!suppressUiRefresh && page == 5) {
+        synthValue[5][7] = (float)selectedDurationIdx;
+        if (!suppressUiRefresh && page == PAGE_SEQ) {
           for (uint8_t j = 2; j < 8; j++) drawValue(j);
         }
         break;
-      case 42:
-        sequencerSteps[sequencerEditStep].mode = (SequencerMode)constrain((int)roundf(value), 0, SEQ_MODE_COUNT - 1);
-        break;
-      case 43:
-        sequencerSteps[sequencerEditStep].root = (uint8_t)constrain((int)roundf(value), 0, 127);
-        break;
-      case 44:
-        sequencerSteps[sequencerEditStep].chord = (ChordType)constrain((int)roundf(value), 0, CHORD_TYPE_COUNT - 1);
-        if (sequencerSteps[sequencerEditStep].chord != CHORD_PLAYED) sequencerSteps[sequencerEditStep].playedCount = 0;
-        break;
-      case 45:
-        sequencerSteps[sequencerEditStep].bars = (uint8_t)constrain((int)roundf(value), 1, 8);
-        break;
-      case 46:
-        sequencerSteps[sequencerEditStep].velocity = (uint8_t)constrain((int)roundf(value), 20, 120);
-        break;
-      case 47:
-        sequencerBpm = (uint16_t)constrain((int)roundf(value), 60, 200);
-        break;
+      case 42: sequencerSteps[sequencerEditStep].mode = (SequencerMode)roundf(value);break;  
+      case 43: sequencerSteps[sequencerEditStep].root = (uint8_t)roundf(value); break;
+      case 44: sequencerSteps[sequencerEditStep].chord = (ChordType)roundf(value);
+                if (sequencerSteps[sequencerEditStep].chord != CHORD_PLAYED) sequencerSteps[sequencerEditStep].playedCount = 0;
+                break;
+      case 45: sequencerSteps[sequencerEditStep].bars = (uint8_t)roundf(value); break;
+      case 46: sequencerSteps[sequencerEditStep].velocity = (uint8_t)roundf(value); break;
+      case 47: selectedDurationIdx = DURATION_PRESETS[(int)roundf(value)];
+                sequencerSteps[sequencerEditStep].melodyDurations[MAX_MELODY_NOTES] = selectedDurationIdx;
+                break;
 
       //pagina 7 ARPPEGIATOR currentPage = 6
-      case 48: arpEnabled = value >= 0.5f; if (!arpEnabled) arpClearNotes(); break;
-      case 49:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpRateHz = value;
-        else arpRateHz = value;
-        break;
-      case 50:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpMode = (ArpMode)roundf(value);
-        else arpMode = (ArpMode)roundf(value);
-        break;
-      case 51:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpOctaves = (int)roundf(value);
-        else arpOctaves = (int)roundf(value);
-        break;
-      case 52:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpGate = value;
-        else arpGate = value;
-        break;
-      case 53:
-        arpHold = (ArpHold)constrain((int)roundf(value), (int)HOLD_ORDER, (int)HOLD_STACK);
-        synthValue[6][5] = (float)arpHold;
-        break;
-      case 54:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpSwing = value;
-        else arpSwing = value;
-        break;
-      case 55:
-        if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpPatternMask = (uint8_t)constrain((int)roundf(value), 1, 255);
-        else arpPatternMask = (int)roundf(value);
-        drawExtraValue();
-        break;
+      case 48: if (sequencerState != SEQ_STATE_OFF) break;
+                else{
+                  arpEnabled = value >= 0.5f; 
+                  if (!arpEnabled) arpClearNotes(); break;
+                }
+      case 49: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpRateHz = value * 0.1f;
+                else arpRateHz = value  * 0.1f;
+                break;
+      case 50: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpMode = (ArpMode)roundf(value);
+                else arpMode = (ArpMode)roundf(value);
+                break;
+      case 51: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpOctaves = (int)roundf(value);
+                else arpOctaves = (int)roundf(value);
+                break;
+      case 52: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpGate = value;
+                else arpGate = value * 0.01f;
+                break;
+      case 53: if (sequencerState != SEQ_STATE_OFF) break;
+                else{
+                  arpHold = (ArpHold)roundf(value);
+                  synthValue[6][5] = (float)arpHold; break;
+                }
+      case 54: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpSwing = value;
+                else arpSwing = value * 0.01;
+                break;
+      case 55: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpPatternMask = (uint8_t)roundf(value);
+                else arpPatternMask = (int)roundf(value);
+                drawExtraValue();
+                break;
     }
   }
   
   //pagina 8 FILES  currentPage = 7
-  else if(page == FILE_PARAM_PAGE) {
+  else if(page == PAGE_FILE) { 
+    filePageParams[param].value = constrain(filePageParams[param].value + dirAcc,
+      filePageParams[param].min,filePageParams[param].max);
+              
     switch (param) {
       case 0: presetSelectFileByIndex(filePageParams[param].value); break;
       case 1:
@@ -360,7 +359,6 @@ void refreshValue(uint8_t page, uint8_t param){
           finalizePresetName();
           bool ok = presetLoadByName(presetEditName);
           Serial.printf("Load preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
-          setPresetStatus(ok ? "LOAD OK" : "LOAD FAIL");
           setPresetActionFeedback(1, ok ? "OK" : "FAIL");
           filePageParams[param].value = 0;
         }
@@ -371,28 +369,32 @@ void refreshValue(uint8_t page, uint8_t param){
           finalizePresetName();
           bool ok = presetSaveByName(presetEditName);
           Serial.printf("Save preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
-          setPresetStatus(ok ? "SAVE OK" : "SAVE FAIL");
           setPresetActionFeedback(2, ok ? "OK" : "FAIL");
           filePageParams[param].value = 0;
           refreshPresetFileList(true);
         }
         break;
       case 3:
-        if (filePageParams[param].value == 1) {
+        if (filePageParams[param].value == 1){
+          setPresetActionFeedback(3, "¿?");
+          leds.setColor(currentPage, RED);
+          leds.show();
+        }
+        if (filePageParams[param].value == 10) {
           finalizePresetName();
           bool ok = presetDeleteByName(presetEditName);
           Serial.printf("Delete preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
-          setPresetStatus(ok ? "DEL OK" : "DEL FAIL");
           setPresetActionFeedback(3, ok ? "OK" : "FAIL");
           filePageParams[param].value = 0;
           refreshPresetFileList(false);
+          leds.setColor(currentPage, GREEN);
+          leds.show();
         }
         break;
       case 4:
         if (filePageParams[param].value == 1) {
           memset(presetEditName, ' ', PN_LEN);
           presetEditName[PN_LEN] = '\0';
-          setPresetStatus("NAME CLEAR");
           setPresetActionFeedback(4, "CLEAR");
           filePageParams[param].value = 0;
         }
@@ -400,7 +402,6 @@ void refreshValue(uint8_t page, uint8_t param){
       case 5:
         if (filePageParams[param].value == 1) {
           presetInsertSelectedChar(true);
-          setPresetStatus("CHAR OK", 800);
           setPresetActionFeedback(5, "WRITE");
           filePageParams[param].value = 0;
         }
@@ -412,52 +413,42 @@ void refreshValue(uint8_t page, uint8_t param){
   }
 
   //pagina 9 ADSR currentPage = 8
-  else if(page == ADSR_PARAM_PAGE) { 
+  else if(page == PAGE_ADSR) { 
     if (param < TOTAL_ADSR) {
-      float uiValue = constrain(ADSRvalues[oscSelect][param], ADSRpage[param].min, ADSRpage[param].max);
-      if (param == ADSR_DELAY || param == ATTACK || param == DECAY || param == RELEASE) {
-        ADSRvalues[oscSelect][param] = uiValue * 0.001f;
-      }
-      else if (param == ATTACK_LEVEL || param == SUSTAIN) {
-        ADSRvalues[oscSelect][param] = uiValue * 0.01f;
-      }
-      else {
-        ADSRvalues[oscSelect][param] = uiValue;
-      }
+      ADSRvalues[oscSelect][param] = constrain(ADSRvalues[oscSelect][param] + (dirAcc * ADSRpage[param].step),
+        ADSRpage[param].min, ADSRpage[param].max);    
       ADSRedited[oscSelect][param] = ADSRvalues[oscSelect][param];
       adsrUsingDefaults[oscSelect] = false;
-      updateEnvelopeRates();
     }
-    else if (param == 6 || param == 7) {
-      uint8_t oscParam = (param == 6) ? 0 : 1;
-      float uiValue = constrain(synthValue[0][oscParam], ADSRpage[param].min, ADSRpage[param].max);
-      synthValue[0][oscParam] = uiValue * 0.01f;
-      if (oscParam == 0) oscMix = synthValue[0][0];
-      else detuneAmount = synthValue[0][1] * 0.01f;
+    else{
+      uint8_t mixIdx = param - TOTAL_ADSR; // 0 para OSC MIX, 1 para DETUNE
+      ADSRmixValues[mixIdx] = constrain(ADSRmixValues[mixIdx] + (dirAcc * ADSRpage[param].step),
+        ADSRpage[param].min, ADSRpage[param].max);
     }
-  }
-  if (!applyingPageDefaultsToggle) {
-    if (page == 1 && page1UsingDefaults) {
-      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page1EditedValues[i] = synthValue[1][i];
-      page1UsingDefaults = false;
-      if (!suppressUiRefresh && currentPage == 1) drawExtraValue();
-    }
-    
-    else if (page == 3 && page3UsingDefaults) {
-      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page3EditedValues[i] = synthValue[3][i];
-      page3UsingDefaults = false;
-      if (!suppressUiRefresh && currentPage == 3) drawExtraValue();
-    }
+    updateEnvelopeRates(oscSelect);
   }
 
+  if (!applyingPageDefaultsToggle) {
+    if (page == PAGE_LFO && page1UsingDefaults) {
+      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page1EditedValues[i] = synthValue[1][i];
+      page1UsingDefaults = false;
+      if (!suppressUiRefresh && currentPage == PAGE_LFO) drawExtraValue();
+    }
+    
+    else if (page == PAGE_CHORUS && page3UsingDefaults) {
+      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page3EditedValues[i] = synthValue[3][i];
+      page3UsingDefaults = false;
+      if (!suppressUiRefresh && currentPage == PAGE_CHORUS) drawExtraValue();
+    }
+
+  }
 
   if (!suppressUiRefresh) {
     drawValue(param);
-    if (page == FILE_PARAM_PAGE) {
-      drawExtraValue();
+    if (page == PAGE_FILE) {
       drawMainVisualization();
     }
-    else if (page == ADSR_PARAM_PAGE) {
+    else if (page == PAGE_ADSR) {
       drawMainVisualization();
     }
     Serial.printf("Page %d Param %d = %.2f\n", page + 1, param, getParamValue(page, param));
@@ -480,15 +471,15 @@ void resetADSR(uint8_t osc){
     }
     adsrUsingDefaults[osc] = false;
   }
-  updateEnvelopeRates();
+  updateEnvelopeRates(osc);
   drawMainVisualization();
 }
 
-void setPage(uint8_t page){
+void setPage(Page page){
   if(page >= PARAM_PAGES) return;
   if(page != currentPage){
     currentPage = page;
-    if (sequencerState != SEQ_STATE_OFF && (currentPage == 4 || currentPage == 6)) {
+    if (sequencerState != SEQ_STATE_OFF && (currentPage == PAGE_CHORD || currentPage == PAGE_ARP)) {
       syncSequencerScopedValues(sequencerEditStep);
     }
     drawUI();
@@ -499,7 +490,10 @@ void setPage(uint8_t page){
   }
   else{
     switch(page){
-      case 2:
+      case PAGE_LFO:
+        applyPageDefaultsToggle(page, PAGE1_DEFAULTS, page1EditedValues, page1UsingDefaults);
+      break;
+      case PAGE_MORPH:
         syncActiveWaveCache(0, oscWaveform[0], WAVE_START);
         syncActiveWaveCache(1, oscWaveform[1], WAVE_START);
         syncActiveWaveCache(0, oscWaveformEnd[0], WAVE_END);
@@ -509,17 +503,23 @@ void setPage(uint8_t page){
         Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_NAMES[oscWaveCacheEndType[1]]);
         leds.setColor(currentPage, GREEN);
         leds.show();
-      case 5:
+      break;
+      case PAGE_CHORUS:
+        applyPageDefaultsToggle(page, PAGE3_DEFAULTS, page3EditedValues, page3UsingDefaults);
+      break;
+      case PAGE_SEQ:
         seqCopyStep(sequencerEditStep);
       break;
-      case 7:
+      case PAGE_FILE:
         presetInsertSelectedChar(true);
-        setPresetStatus("CHAR OK", 800);
-      case 8:
-        syncActiveWaveCache(0, oscWaveform[oscSelect], WAVE_START);
-        syncActiveWaveCache(1, oscWaveform[!oscSelect], WAVE_START);
+        //setPresetStatus("CHAR OK", 800);
+      break;
+      case PAGE_ADSR:
+        syncActiveWaveCache(0, oscWaveform[0], WAVE_START);
+        syncActiveWaveCache(1, oscWaveform[1], WAVE_START);
         leds.setColor(currentPage, GREEN);
         leds.show();
+        drawExtraValue();
       break;
     }
   }
@@ -537,12 +537,12 @@ void processButtons() {
     bool pressed = !bitRead(current, i) && bitRead(lastBtnState, i);
     
     if (pressed) {
-      if (currentPage == FILE_PARAM_PAGE && i == 7) {
+      if (currentPage == PAGE_FILE && i == 7) {
         presetInsertSelectedChar(true);
-        setPresetStatus("CHAR OK", 800);
+        //setPresetStatus("CHAR OK", 800);
       }
       else if(i < PARAM_PAGES) {
-        setPage(i);
+        setPage((Page)i);
       }
     }
   }
@@ -554,40 +554,40 @@ void processControl(){
   if (enc){ //Encoder
     if(currentPage < SOUND_PARAM_PAGES){
       switch(currentPage){
-        case 0:
+        case PAGE_CONF:
           
         break;
-        case 1:
-          applyPageDefaultsToggle(1, PAGE1_DEFAULTS, page1EditedValues, page1UsingDefaults);
+        case PAGE_LFO:
+          applyPageDefaultsToggle(currentPage, PAGE1_DEFAULTS, page1EditedValues, page1UsingDefaults);
         break;
-        case 2:
+        case PAGE_MORPH:
           oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT);
           if(oscWaveform[oscSelect] == WAVE_COUNT && enc == 1) oscWaveform[oscSelect] = WAVE_SAW;
-          if(oscWaveform[oscSelect] == WAVE_COUNT && enc == -1) oscWaveform[oscSelect] = WAVE_NOISE;
+          if(oscWaveform[oscSelect] == WAVE_SAW && enc == -1) oscWaveform[oscSelect] = WAVE_NOISE;
           drawWaveAudioIcon(oscWaveform[oscSelect], 185, oscSelect ? 214 : 159, oscSelect ? TFT_CYAN : TFT_YELLOW);
           leds.setColor(currentPage, RED);
           leds.show();
         break;
-        case 3:
-          applyPageDefaultsToggle(3, PAGE3_DEFAULTS, page3EditedValues, page3UsingDefaults);
+        case PAGE_CHORUS:
+          applyPageDefaultsToggle(currentPage, PAGE3_DEFAULTS, page3EditedValues, page3UsingDefaults);
         break;
-        case 4:
+        case PAGE_CHORD:
         break;
-        case 5:
+        case PAGE_SEQ:
           sequencerTransitionMode = (SeqTransitionMode)constrain((int)sequencerTransitionMode + enc, 0, SEQ_TRANS_COUNT - 1);
         break;
-        case 6:
+        case PAGE_ARP:
           
         break;
-      
-      }
+       }
       drawExtraValue();
     }
-    else if(currentPage == ADSR_PARAM_PAGE){
+    else if(currentPage == PAGE_ADSR){
       oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT);
       if(oscWaveform[oscSelect] == WAVE_COUNT && enc == 1) oscWaveform[oscSelect] = WAVE_SAW;
-      if(oscWaveform[oscSelect] == WAVE_COUNT && enc == -1) oscWaveform[oscSelect] = WAVE_NOISE;
+      if(oscWaveform[oscSelect] == WAVE_SAW && enc == -1) oscWaveform[oscSelect] = WAVE_NOISE;
       drawWaveAudioIcon(oscWaveform[oscSelect], 255, oscSelect ? 214 : 159, oscSelect ? TFT_CYAN : TFT_YELLOW); 
+      drawExtraValue();
       leds.setColor(currentPage, RED);
       leds.show();
     }
@@ -599,7 +599,7 @@ void processControl(){
   }
   if ((millis() - lastDebounceTime) > debounceDelay) { 
     if (botEnc && !botEnc_estable) {
-      setPage(ADSR_PARAM_PAGE);
+      setPage(PAGE_ADSR);
     }
     botEnc_estable = botEnc;
   }
@@ -611,10 +611,14 @@ void processControl(){
   }
 
   if ((millis() - lastDebounceTime) > debounceDelay) {
-    if (botAz && !botAz_estable) {  
-      oscSelect = 1;
-      drawMainVisualization();
+    if (botAz && !botAz_estable) {
+      if(oscSelect != 1){  
+        oscSelect = 1;
+        drawMainVisualization();
+      }
+      else toggleADSRDefaults(1);
     }
+    
     botAz_estable = botAz;
   }
   botAz_ant = botAz;
@@ -626,10 +630,20 @@ void processControl(){
 
   if ((millis() - lastDebounceTime) > debounceDelay) {
     if (botAm && !botAm_estable) {
-      oscSelect = 0;
-      drawMainVisualization();
+      if(currentPage == PAGE_SEQ){
+        uint8_t step = sequencerEditStep & 0x07;
+        sequencerSteps[step].layerChord = !sequencerSteps[step].layerChord; 
+        drawExtraValue();
+      }
+      else{
+        if (oscSelect != 0) {
+          oscSelect = 0;
+          drawMainVisualization();
+        }
+        else toggleADSRDefaults(0);
       }
     }
+    
     botAm_estable = botAm;
   }
   botAm_ant = botAm;
@@ -646,7 +660,7 @@ void processControl(){
         if (arpEnabled) arpReleaseLatchedNotes();
         else if (midiKeysPressedCount == 0) releaseAllVoices();
       }
-      if (currentPage == 6) drawValue(5);
+      if (currentPage == PAGE_ARP) drawValue(5);
       Serial.printf("Latch -> %s\n", latchEnabled ? "ON" : "OFF");
     }
   }
@@ -662,7 +676,6 @@ void drawValue(uint8_t i){
   char buf[12];
   char charBuf[2] = {0};
   const char* textValue = nullptr;
-  //SyntParam &p = parametroPages[currentPage][i];
   uint8_t pos = 40;
   float value = getParamValue(currentPage, i);
   switch(getParamType(currentPage, i)){
@@ -674,7 +687,7 @@ void drawValue(uint8_t i){
       break;
     
     case INT:    
-      if (currentPage == FILE_PARAM_PAGE && i == 0 && presetFileCount > 0) {
+      if (currentPage == PAGE_FILE && i == 0 && presetFileCount > 0) {
         snprintf(buf, sizeof(buf), "%d", ((int)roundf(value)) + 1);
       }
       else {
@@ -689,7 +702,7 @@ void drawValue(uint8_t i){
       break;
 
     case ONOFF:
-      if (currentPage == 0 && i == 7) {
+      if (currentPage == PAGE_CONF && i == 7) {
         textValue = (bool)roundf(value) ? "RAM" : "PSRAM";
       } else {
         textValue = (bool)roundf(value) ? "ON" : "OFF";
@@ -710,7 +723,7 @@ void drawValue(uint8_t i){
       break;
 
     case FFILE:
-      if (currentPage == FILE_PARAM_PAGE &&
+      if (currentPage == PAGE_FILE &&
           (i == 1 || i == 2 || i == 3 || i == 4 || i == 5) &&
           presetActionParam == (int8_t)i &&
           (int32_t)(presetActionUntil - millis()) > 0) {
@@ -718,6 +731,11 @@ void drawValue(uint8_t i){
       }
       else {
         textValue = "GO";
+      }
+      if(textValue == "GO"){
+        filePageParams[i].value = 0;
+        leds.setColor(currentPage, GREEN);
+        leds.show();
       }
       break;
 
@@ -738,7 +756,7 @@ void uint8ToBinaryStr(uint8_t num, char *buffer) {
 }
 
 void drawExtraValue(){
-  char buf[12] = "";
+  char buf[20] = "";
   const int x = 10;
   const int y = 130;
   tft.setFreeFont(NUM_TEXT);
@@ -746,33 +764,32 @@ void drawExtraValue(){
   tft.setTextColor(TFT_WHITE);
   tft.fillRect(x, y, 170, 20, TFT_BLACK);
   switch(currentPage){
-    case 0: 
-      
+    case PAGE_CONF: 
+      snprintf(buf, sizeof(buf), "%s", changed ? "RESET HW" : "");
       break;
-    case 1: 
+    case PAGE_LFO: 
       snprintf(buf, sizeof(buf), "%s", page1UsingDefaults ? "DEFAULT" : "EDIT"); 
       break;
-    case 2: 
+    case PAGE_MORPH: 
       snprintf(buf, sizeof(buf), "%s",  WAVE_LONG_NAMES[oscWaveform[oscSelect]]);
       break;
-    case 3: 
+    case PAGE_CHORUS: 
       snprintf(buf, sizeof(buf), "%s", page3UsingDefaults ? "DEFAULT" : "EDIT"); 
       break;
-    case 4:
+    case PAGE_CHORD:
       snprintf(buf, sizeof(buf), "%s I%d", CHORD_TYPE_NAMES[(int)chordType], chordInversion);
       break;
-    case 5:
-      snprintf(buf, sizeof(buf), "%s S%d B%d", SEQ_TRANSITION_NAMES[(int)sequencerTransitionMode], sequencerPlayStep + 1, sequencerPlayBar);
+    case PAGE_SEQ:
+      snprintf(buf, sizeof(buf), "%s S%d B%d %s", SEQ_TRANSITION_NAMES[(int)sequencerTransitionMode], sequencerPlayStep + 1, 
+      sequencerPlayBar, sequencerSteps[sequencerEditStep].layerChord ? "+CHORD" : "");
       break;
-    case 6: 
+    case PAGE_ARP: 
       uint8ToBinaryStr(arpPatternMask, buf);
       break;
-    case 7: {
+    case PAGE_FILE: {
       char nameBuf[PN_LEN + 1];
       strncpy(nameBuf, presetEditName, PN_LEN);
       nameBuf[PN_LEN] = '\0';
-      int yy = 143;
-      tft.fillRect(x, yy, 150, 20, TFT_BLACK);//148, 150, 22
       int pos = constrain(filePageParams[6].value, 0, PN_LEN - 1);
       char prefix[PN_LEN + 1];
       strncpy(prefix, nameBuf, pos);
@@ -781,7 +798,7 @@ void drawExtraValue(){
       if (selected[0] == '\0') selected[0] = ' ';
       const char* suffix = (nameBuf[pos] != '\0') ? &nameBuf[pos + 1] : "";
 
-      tft.setCursor(x, yy);
+      tft.setCursor(x, y + 18);
       tft.setTextColor(TFT_WHITE);
       tft.print(prefix);
       tft.setTextColor(TFT_RED);
@@ -790,11 +807,11 @@ void drawExtraValue(){
       tft.print(suffix);
       break;
     }
-    case 8:
+    case PAGE_ADSR:
       snprintf(buf, sizeof(buf), "%s: %s", OSC_NAME[oscSelect], WAVE_LONG_NAMES[oscWaveform[oscSelect]]);
       break;
   }
-  if (currentPage != 7) {
+  if (currentPage != PAGE_FILE) {
     tft.drawString(buf, x, y);
   }
 }
@@ -805,34 +822,74 @@ void drawLinesADSR(uint8_t osc){
   int width = 235;
   int height = 79;
 
-  float L = ADSRvalues[osc][ADSR_DELAY];
-  float A = ADSRvalues[osc][ATTACK];
-  float AL = ADSRvalues[osc][ATTACK_LEVEL];
-  float D = ADSRvalues[osc][DECAY];
-  float S = ADSRvalues[osc][SUSTAIN];
-  float R = ADSRvalues[osc][RELEASE];
+  // 1. Extraemos y normalizamos los valores del oscilador ACTUAL (0.0f a 1.0f)
+  float L_norm = ADSRvalues[osc][DELAY] / ADSRpage[DECAY].max;
+  float A_norm = ADSRvalues[osc][ATTACK] / ADSRpage[ATTACK].max;
+  float AL     = ADSRvalues[osc][ATTACK_LEV] / ADSRpage[ATTACK_LEV].max;
+  float D_norm = ADSRvalues[osc][DECAY] / ADSRpage[DECAY].max;
+  float S      = ADSRvalues[osc][SUSTAIN] / ADSRpage[SUSTAIN].max;
+  float R_norm = ADSRvalues[osc][RELEASE] / ADSRpage[RELEASE].max;
   uint16_t color = (osc == 0) ? TFT_YELLOW : TFT_CYAN;
 
-  float total = L + A + D + R + 0.2f;
+  // Aplicamos la raíz cuadrada para la sensibilidad visual
+  float L = sqrtf(L_norm);
+  float A = sqrtf(A_norm);
+  float D = sqrtf(D_norm);
+  float R = sqrtf(R_norm);
+  float sustainTime = 0.35f;
 
-  int xL = x0 + (L / total) * width;
-  int xA = xL + (A / total) * width;
-  int xD = xA + (D / total) * width;
-  int xS = xD + (width / 4);
-  int xR = xS + (R / total) * width;
+  // 2. CONGRUENCIA TEMPORAL: Calculamos los mismos valores para el OTRO oscilador
+  uint8_t otroOsc = (osc == 0) ? 1 : 0;
+  float L_otro = sqrtf(ADSRvalues[otroOsc][DELAY] / ADSRpage[DECAY].max);
+  float A_otro = sqrtf(ADSRvalues[otroOsc][ATTACK] / ADSRpage[ATTACK].max);
+  float D_otro = sqrtf(ADSRvalues[otroOsc][DECAY] / ADSRpage[DECAY].max);
+  float R_otro = sqrtf(ADSRvalues[otroOsc][RELEASE] / ADSRpage[RELEASE].max);
 
-  if (xR > (x0 + width - 1)) xR = x0 + width - 1;
+  // 3. Buscamos el "peor escenario" (la suma de tiempos más larga entre los dos osciladores)
+  float sumaOscActual = L + A + D + sustainTime + R;
+  float sumaOscOtro   = L_otro + A_otro + D_otro + sustainTime + R_otro;
+  
+  // El total de la pantalla se adaptará al oscilador que tenga la envolvente más larga
+  float totalWeights = (sumaOscActual > sumaOscOtro) ? sumaOscActual : sumaOscOtro;
 
-  int yTop = y0 - height;
-  int yAtk = y0 - (height * AL);
-  int ySus = y0 - (height * S);
+  // 4. CORRECCIÓN Y AJUSTE: Ancho mínimo dinámico para el Delay y fijos para el resto
+  int minWidthDelay = (L_norm > 0.0f) ? 4 : 0; 
+  int minWidthOtros = 8; 
+  int totalMinWidth = minWidthDelay + (minWidthOtros * 4); 
+  int dynamicWidth = width - totalMinWidth;
 
-  tft.drawLine(x0, y0, xL, y0, color);
-  tft.drawLine(xL, y0, xA, yAtk, color);
-  tft.drawLine(xA, yAtk, xD, ySus, color);
-  tft.drawLine(xD, ySus, xS, ySus, color);
-  tft.drawLine(xS, ySus, xR, y0, color);
+  // 5. SOLUCIÓN DEL ERROR: Usamos las variables correctas declaradas arriba
+  // Si L_norm es 0, wL será exactamente 0 píxeles.
+  int wL = (L_norm > 0.0f) ? (minWidthDelay + (int)((L / totalWeights) * dynamicWidth)) : 0;
+  int wA = minWidthOtros + (int)((A / totalWeights) * dynamicWidth);
+  int wD = minWidthOtros + (int)((D / totalWeights) * dynamicWidth);
+  int wS = minWidthOtros + (int)((sustainTime / totalWeights) * dynamicWidth);
+  int wR = minWidthOtros + (int)((R / totalWeights) * dynamicWidth); 
+
+  // 6. Construir las coordenadas X
+  int xL = x0 + wL;
+  int xA = xL + wA;
+  int xD = xA + wD;
+  int xS = xD + wS;
+  int xR = xS + wR; 
+
+  // Ajuste de seguridad por si es el oscilador más largo y hay decimales flotantes
+  if (xR > (x0 + width) || (sumaOscActual >= sumaOscOtro && xR < (x0 + width))) {
+    xR = x0 + width; 
+  }
+
+  // 7. Calcular las coordenadas Y
+  int yAtk = y0 - (int)(height * AL);
+  int ySus = y0 - (int)(height * S);
+
+  // 8. Renderizado
+  tft.drawLine(x0, y0, xL, y0, color);       
+  tft.drawLine(xL, y0, xA, yAtk, color);     
+  tft.drawLine(xA, yAtk, xD, ySus, color);   
+  tft.drawLine(xD, ySus, xS, ySus, color);   
+  tft.drawLine(xS, ySus, xR, y0, color);     
 }
+
 
 void drawADSR(){
   char buf[9];
@@ -856,7 +913,7 @@ void drawADSR(){
 void drawAudioWaveform(){
   const int x = 5;
   const int y = 160;
-  const int w = (currentPage == 2) ? 160 : 220;
+  const int w = (currentPage == PAGE_MORPH) ? 160 : 220;
   const int h = 75;
   const int left = x + 2;//8
   const int right = x + w - 3;//236
@@ -948,8 +1005,8 @@ void drawPresetFileList(){
     bool isSelected = fileIndex == selected;
 
     if (isSelected) {
-      tft.fillRect(tx - 2, ty - 1, colW - 4, rowH, TFT_DARKGREY);
-      tft.setTextColor(TFT_GREEN);
+      
+      tft.setTextColor(TFT_YELLOW);
     }
     else {
       tft.setTextColor(TFT_WHITE);
@@ -962,8 +1019,8 @@ void drawPresetFileList(){
   }
 }
 
-void drawMainVisualization(){
-  if (currentPage == ADSR_PARAM_PAGE) {
+void  drawMainVisualization(){
+  if (currentPage == PAGE_ADSR) {
     for(byte i=0;i<8;i++) drawValue(i);
     drawADSR();
     drawWaveAudioIcon(oscWaveform[0], 255, 159, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
@@ -973,16 +1030,16 @@ void drawMainVisualization(){
     leds.setColor(9, color);
     leds.show();
   }
-  else if (currentPage == FILE_PARAM_PAGE) {
+  else if (currentPage == PAGE_FILE) {
     drawPresetFileList();
   }
 
-  else if (currentPage == 2){  //Morphing
+  else if (currentPage == PAGE_MORPH){  //Morphing
     drawAudioWaveform();
     drawWaveAudioIcon(oscWaveform[0], 185, 159, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
     drawWaveAudioIcon(oscWaveform[1], 185, 214, oscSelect ? TFT_CYAN : TFT_DARKGREY);
-    drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, TFT_YELLOW);
-    drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, TFT_CYAN);
+    drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, morphEnabled ? TFT_YELLOW : TFT_DARKGREY);
+    drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, morphEnabled ? TFT_CYAN : TFT_DARKGREY);
     drawExtraValue();
     SimpleColor color = oscSelect ? CYAN : YELLOW;
     leds.setColor(9, color);
@@ -1003,7 +1060,7 @@ void refreshAudioScope(){
   static uint32_t lastDrawMs = 0;
   static uint32_t lastSerial = 0;
 
-  if (currentPage == ADSR_PARAM_PAGE || currentPage == FILE_PARAM_PAGE) return;
+  if (currentPage == PAGE_ADSR || currentPage == PAGE_FILE) return;
   if (millis() - lastDrawMs < 80) return;
   if (audioScopeSerial == lastSerial) return;
 

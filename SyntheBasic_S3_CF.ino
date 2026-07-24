@@ -1,4 +1,4 @@
-#include <Wire.h>
+#include <Wire.h> 
 #include <Encoder_FJ.h>
 #include <SimpleWS2812_RMTv3.h>
 #define USER_SETUP_LOADED
@@ -12,6 +12,7 @@
 #include <esp_psram.h>
 #include <Preferences.h>
 #include <cstring>
+#include <cmath>
 #include "soc/soc_caps.h"
 #include "sdkconfig.h"
 #include "Catalogo_Formulas.h"
@@ -97,9 +98,6 @@ volatile uint16_t audioScopeWriteIndex = 0;
 volatile uint32_t audioScopeSerial = 0;
 
 
-
-
-
 const uint8_t N_OSC = 2;
 const uint8_t ICON_W = 60;
 const uint8_t ICON_H = 25;
@@ -126,16 +124,15 @@ uint8_t midiData1 = 0;
 bool waitingForData2 = false;
 
 enum Type : uint8_t {FLOAT = 0, INT, F01, ONOFF, NAME, CHARSEL, FFILE, NULO};
-
+enum Page : uint8_t {PAGE_CONF = 0, PAGE_LFO, PAGE_MORPH, PAGE_CHORUS, PAGE_CHORD, PAGE_SEQ, PAGE_ARP, PAGE_FILE, PAGE_ADSR}; 
 
 const uint8_t SOUND_PARAM_PAGES = 7;
-const uint8_t FILE_PARAM_PAGE = 7;
-const uint8_t ADSR_PARAM_PAGE = 8;
 const uint8_t PARAM_PAGES = 9;
 const uint8_t PARAMS_PER_PAGE = 8;
 const uint8_t PN_LEN = 10; //Preset name len
-uint8_t currentPage = 0;
-uint8_t lastPage = 0;
+
+Page currentPage = PAGE_CONF;
+Page lastPage = PAGE_CONF;
 
 const float PAGE1_DEFAULTS[PARAMS_PER_PAGE] = {0.0f,5.0f,0.3f,0.0f,     0.0f,4.0f,8.0f,0.20f};    //LFO
 const float PAGE3_DEFAULTS[PARAMS_PER_PAGE] = {0.0f, 0.0f, 0.05f, 0.2f, 0.5f, 0.0f, 0.0f, 0.0f};  //Chorus
@@ -145,23 +142,13 @@ bool page1UsingDefaults = false;
 bool page3UsingDefaults = false;
 bool applyingPageDefaultsToggle = false;
 
-const uint8_t stepsForSeq = 16;
 
-enum ADSR : uint8_t {ADSR_DELAY, ATTACK, ATTACK_LEVEL, DECAY, SUSTAIN, RELEASE, TOTAL_ADSR};
-const float ADSR_DEFAULTS[N_OSC][TOTAL_ADSR] = {{0.0f,0.01f,1.0f,0.2f,0.7f,0.3f},{0.0f,0.01f,1.0f,0.2f,0.7f,0.3f}};
-float ADSRedited[N_OSC][TOTAL_ADSR] = {{0.0f,0.01f,1.0f,0.2f,0.7f,0.3f},{0.0f,0.01f,1.0f,0.2f,0.7f,0.3f}};
-float ADSRvalues[N_OSC][TOTAL_ADSR] = {{0.0f,0.01f,1.0f,0.2f,0.7f,0.3f},{0.0f,0.01f,1.0f,0.2f,0.7f,0.3f}};
+enum ADSR : uint8_t {DELAY, ATTACK, ATTACK_LEV, DECAY, SUSTAIN, RELEASE, TOTAL_ADSR};
+const float ADSR_DEFAULTS[N_OSC][TOTAL_ADSR] = {{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f},{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f}};
+float ADSRedited[N_OSC][TOTAL_ADSR] = {{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f},{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f}};
+float ADSRvalues[N_OSC][TOTAL_ADSR] = {{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f},{0.0f,10.0f,100.0f,200.0f,70.0f,500.0f}};
+float ADSRmixValues[2] = {50.0f, 1.0f};
 bool adsrUsingDefaults[N_OSC] = {false, false};
-
-float synthValue[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {  //valores de los encoders
-  {0.5f,0.2f,0.2f,1.5f,     1.0f,3.0f,0.0f,0.0f},
-  {0.0f,5.0f,0.3f,0.0f,     0.0f,4.0f,8.0f,0.20f},
-  {0.0f,0.0f,0.0f,4.0f,     0.5f,0.0f,0.5f,0.5f},
-  {0.0f,0.0f,0.05f,0.2f,    0.5f, 0.0f, 0.0f, 0.0f},
-  {0.0f,0.0f,0.0f,0.0f,     100.0f, 0.0f,0.0f,4.0f},
-  {0.0f,1.0f,0.0f,60.0f,    9.0f,1.0f,100.0f,120.0f},//(float)CHORD_REST
-  {0.0f,6.0f, 0.0f,1.0f,    0.65f,1.0f, 0.0f,255.0f},
-};
 
 struct ADSRparam {
   const char* name;
@@ -171,10 +158,10 @@ struct ADSRparam {
   const Type type;
 };
 const ADSRparam ADSRpage[PARAMS_PER_PAGE] = {
-  //Name, min,  max, encoder increment, type
-    {"DELAY",  0.0f, 2000.0f, 5.0f, INT},      {"ATTACK",  1.0f, 5000.0f, 5.0f, INT},
-    {"ATT LVL",  0.0f, 100.0f, 1.0f, INT},     {"DECAY",  1.0f, 5000.0f, 5.0f, INT},
-    {"SUSTAIN",  0.0f, 100.0f, 1.0f, INT},     {"RELEASE",  1.0f, 8000.0f, 5.0f, INT},
+      //Name, min,    max, encoder increment, type
+    {"DELAY",  0.0f, 2000.0f, 1.0f, INT},      {"ATTACK",  1.0f, 5000.0f, 1.0f, INT},
+    {"ATT LVL",  0.0f, 100.0f, 1.0f, INT},     {"DECAY",  1.0f, 5000.0f, 1.0f, INT},
+    {"SUSTAIN",  0.0f, 100.0f, 1.0f, INT},     {"RELEASE",  1.0f, 8000.0f, 1.0f, INT},
     {"OSC MIX",  0.0f, 100.0f, 1.0f, INT},     {"DETUNE",  0.0f, 100.0f, 1.0f, INT}
 };
 
@@ -185,49 +172,58 @@ struct SyntParam {
   float step; //encoder increment
   const Type type;
 };
+float synthValue[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {  //valores de los encoders
+  {0.0f,120.0f,20.0f,150.0f,    10.0f,3.0f,3.0f,0.0f},
+  {0.0f,80.0f,50.0f,0.0f,       0.0f,50.0f,8.0f,0.0f},
+  {0.0f,0.0f,0.0f,4.0f,         50.0f,0.0f,50.0f,50.0f},
+  {0.0f,0.0f,55.0f,35.0f,       100.0f, 15.0f, 35.0f, 0.0f},
+  {0.0f,0.0f,0.0f,0.0f,         100.0f, 0.0f,0.0f,4.0f},
+  {0.0f,1.0f,0.0f,60.0f,        9.0f,1.0f,100.0f,1.0f},//(float)CHORD_REST
+  {0.0f,60.0f, 0.0f,1.0f,       65.0f,1.0f,0.0f,255.0f},
+};
 const SyntParam parametroPages[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {
       //Name,    min,  max,  encoder increment,   type
   {
-    {"OSC MIX",  0.0f, 1.0f, 0.01f, F01},       {"DETUNE",  0.0f, 1.0f, 0.01f, F01},
-    {"%PULSE",  0.1f, 0.9f, 0.05f, F01},        {"M GAIN",  0.1f, 3.0f, 0.01f, FLOAT},
-    {"CURVE",  0.1f, 3.0f, 0.05f, FLOAT},       {"N RLEAS",  1.0f, 6.0f, 1.0f, INT},
+    {"      ",  0.0f, 1.0f, 1.0f, NULO},        {"BPM",  60.0f, 200.0f, 1.0f, INT},
+    {"%PULSE",  10.0f, 90.0f, 1.0f, INT},       {"M GAIN",  10.0f, 300.0f, 1.0f, INT},
+    {"CURVE",  1.0f, 30.0f, 1.0f, INT},         {"N RLEAS",  1.0f, 6.0f, 1.0f, INT},
     {"WT SIZE",  0.0f, 3.0f, 1.0f, NAME},       {"RAM/PSR",  0.0f, 1.0f, 1.0f, ONOFF},
   },
   {
-    {"LFO SHP",  0.0f, 4.0f, 1.0f, NAME},       {"RATE",  0.1f, 20.0f, 0.05f, FLOAT},
-    {"DEPTH",  0.0f, 1.0f, 0.01f, F01},         {"TARGET",  0.0f, 2.0f, 1.0f, NAME},
-    {"ATTACK",  0.0f, 5000.0f, 5.0f, INT},      {"CUTOFF",  0.1f, 20.0f, 0.05f, FLOAT},
-    {"PTCH UP",  1.0f, 32.0f, 1.0f, INT},       {"RESONAN",  0.0f, 1.0f, 0.01f, F01},
+    {"LFO SHP",  0.0f, 6.0f, 1.0f, NAME},       {"RATE",  10.0f, 200.0f, 1.0f, INT},
+    {"DEPTH",  0.0f, 100.0f, 1.0f, INT},       {"TARGET",  0.0f, 4.0f, 1.0f, NAME},
+    {"ATTACK",  0.0f, 5000.0f, 5.0f, INT},      {"CUTOFF",  1.0f, 200.0f, 1.0f, INT},
+    {"PTCH UP",  1.0f, 32.0f, 1.0f, INT},       {"RESONAN",  0.0f, 100.0f, 1.0f, INT},
   },
   {
-    {"GLIDE",  0.0f, 1.0f, 0.01f, F01},         {"MORPH",  0.0f, 1.0f, 1.0f, ONOFF},
+    {"GLIDE",  0.0f, 5000.0f, 1.0f, INT},       {"MORPH",  0.0f, 1.0f, 1.0f, ONOFF},
     {"END A",  0.0f, 49.0f, 1.0f, NAME},        {"END B",  0.0f, 49.0f, 1.0f, NAME},
-    {"MIX",  0.0f, 1.0f, 0.01f, F01},           {"MODE",  0.0f, 1.0f, 1.0f, NAME},
-    {"VEL",  0.0f, 1.0f, 0.01f, F01},           {"DEPTH",  0.0f, 1.0f, 0.01f, F01},
+    {"MIX",  0.0f, 100.0f, 1.0f, INT},          {"MODE",  0.0f, 3.0f, 1.0f, NAME},
+    {"VEL",  0.0f, 100.0f, 1.0f, INT},          {"DEPTH",  0.0f, 100.0f, 1.0f, INT},
   },
   { 
     {"CHORUS",  0.0f, 1.0f, 1.0f, ONOFF},       {"MODE",  0.0f, 1.0f, 1.0f, NAME},
-    {"RATE",  0.05f, 5.0f, 0.1f, FLOAT},        {"DEPTH",  0.2f, 12.0f, 0.1f, FLOAT},
-    {"BASE",  0.5f, 25.0f, 0.1f, FLOAT},        {"FDBACK",  -0.85f, 0.85f, 0.01f, FLOAT},
-    {"MIX", 0.0f, 1.0f, 0.01f, F01},            {"XOVR%",  0.0f, 100.0f, 1.0f, INT},
+    {"RATE",  5.0f, 500.0f, 1.0f, INT},         {"DEPTH",  0.0f, 100.0f, 1.0f, INT},
+    {"BASE",  5.0f, 250.0f, 1.0f, INT},         {"FDBACK",  -85.0f, 85.0f, 1.0f, INT},
+    {"MIX", 0.0f, 100.0f, 1.0f, INT},           {"XOVR%",  0.0f, 100.0f, 1.0f, INT},
   },
   {
     {"CHORD",  0.0f, 1.0f, 1.0f, ONOFF},        {"TYPE",  0.0f, 7.0f, 1.0f, NAME},
     {"INV",  0.0f, 2.0f, 1.0f, INT},            {"OCT", -1.0f, 1.0f, 1.0f, INT},
-    {"VEL%",  30.0f, 120.0f, 1.0f, INT},        {"SPRD", 0.0f, 1.0f, 0.01f, F01},
-    {"STRM",  0.0f, 100.0f, 1.0f, INT},         {"DENS",  2.0f, 4.0f, 1.0f, INT},
+    {"VOL%",  30.0f, 120.0f, 1.0f, INT},        {"SPRD", 0.0f, 100.0f, 1.0f, INT},
+    {"STRM",  0.0f, 100.0f, 1.0f, INT},         {"DENS",  2.0f, 8.0f, 1.0f, INT},
   },
   {
-    {"SEQ",  0.0f, 2.0f, 1.0f, NAME},           {"STEP",  1.0f, 16.0 , 1.0f, INT},//(float)stepsForSeq
-    {"MODE",  0.0f, 1.0f, 1.0f, NAME},          {"ROOT",  24.0f, 96.0f, 1.0f, INT},
-    {"TYPE",  0.0f, 10.0, 1.0f, NAME},          {"BARS",  1.0f, 8.0f, 1.0f, INT},//(float)(CHORD_TYPE_COUNT - 1)
-    {"VEL%",  20.0f, 120.0f, 1.0f, INT},        {"BPM",  60.0f, 200.0f, 1.0f, INT},
+    {"SEQ",  0.0f, 2.0f, 1.0f, NAME},           {"STEP",  1.0f, 16.0 , 1.0f, INT},
+    {"MODE",  0.0f, 2.0f, 1.0f, NAME},          {"ROOT",  24.0f, 96.0f, 1.0f, INT},
+    {"TYPE",  0.0f, 10.0, 1.0f, NAME},          {"BARS",  1.0f, 8.0f, 1.0f, INT},
+    {"VEL%",  20.0f, 120.0f, 1.0f, INT},        {"LENGTH", 0.0f, 9.0f, 1.0f, NAME},
   },
   {
-    {"ARP",  0.0f, 1.0f, 1.0f, ONOFF},          {"RATE",  1.0f, 20.0f, 0.1f, FLOAT},
+    {"ARP",  0.0f, 1.0f, 1.0f, ONOFF},          {"RATE",  10.0f, 200.0f, 1.0f, INT},
     {"MODE", 0.0f, 7.0f, 1.0f, NAME},           {"OCTAVE",  1.0f, 3.0f, 1.0f, INT},
-    {"GATE",  0.1f, 0.95f, 0.01f, F01},         {"HOLD",  1.0f, 3.0f, 1.0f, NAME},
-    {"SWING", 0.0f, 0.45f, 0.005f, F01},        {"MASK",  1.0f, 255.0f, 1.0f, INT},
+    {"GATE",  10.0f, 95.0f, 1.0f, INT},         {"HOLD",  1.0f, 3.0f, 1.0f, NAME},
+    {"SWING", 0.0f, 45.0f, 1.0f, INT},          {"MASK",  1.0f, 255.0f, 1.0f, INT},
   }
 };
 
@@ -236,14 +232,14 @@ struct FileParam {
   int value;
   int min;
   int max;
-  int step; //encoder increment
+  
   const Type type;
 };
 FileParam filePageParams[PARAMS_PER_PAGE] = {
-  {"FILE", 0, 0, 0, 1, INT},       {"LOAD", 0, 0, 1, 1, FFILE},
-  {"SAVE", 0, 0, 1, 1, FFILE},     {"DEL", 0, 0, 1, 1, FFILE},
-  {"CLEAR", 0, 0, 1, 1, FFILE},    {"WRITE", 0, 0, 1, 1, FFILE},
-  {"POS", 0, 0, PN_LEN-1, 1, INT}, {"CHAR", 1, 0, 38, 1, CHARSEL},
+  {"FILE", 0, 0, 0,  INT},       {"LOAD", 0, 0, 1,  FFILE},
+  {"SAVE", 0, 0, 1,  FFILE},     {"DEL", 0, 0, 10,  FFILE},
+  {"CLEAR", 0, 0, 1,  FFILE},    {"WRITE", 0, 0, 1,  FFILE},
+  {"POS", 0, 0, PN_LEN-1,  INT}, {"CHAR", 1, 0, 38,  CHARSEL},
 };
 
 const char* WAVE_LONG_NAMES[] = {"SAW", "SINE", "TRIANGLE", "SQUARE", "PULSE", "SUPER SAW", "ORGAN", "CRUSH", "DRIVE WARM",
@@ -261,14 +257,14 @@ const char* WAVE_NAMES[] = {"Saw", "Sine", "Tri", "Sqr", "Pulse", "SpSaw", "Orga
                             "SawFl", "CrosM", "CosEx", "WarpD", "SnPwm", "SwSqr", "SbHar",
                             "Beat", "Stp8b", "SawHd", "Polyn", "NoisP", "Noise"};
 const char* OSC_NAME[] = {"A", "B"};
-const char* LFO_SHAPE_NAMES[] = {"Sine", "Tri", "Saw", "Sqr", "Pulse"};
-const char* LFO_TARGET_NAMES[] = {"Pitch", "Vol", "CutOf"};
+const char* LFO_SHAPE_NAMES[] = {"Sine", "Tri", "Saw", "Sqr","Pulse", "S&H", "Chaos"};
+const char* LFO_TARGET_NAMES[] = {"Pitch", "Vol", "CutOf", "OsMix", "FXMod"};
 const char* FX_MODE_NAMES[] = {"Chrus", "Flger"};
-const char* MORPH_MODE_NAMES[] = {"Hard", "Equal"};
+const char* MORPH_MODE_NAMES[] = {"Hard", "Equal", "LFO", "ENV"};
 const char* ARP_MODE_NAMES[] = {"Up", "Down", "UpDwn", "Rnd", "Pat", "DwnUp", "InOut", "OutIn"};
 const char* ARP_HOLD_NAMES[] = {"Off", "Order", "Play", "Stack", };
 const char* CHORD_TYPE_NAMES[] = {"Maj", "Min", "Sus2", "Sus4", "Pwr", "Maj7", "Min7", "7", "Playd", "Rest", "End"};
-const char* SEQ_MODE_NAMES[] = {"Chord", "Arp"};
+const char* SEQ_MODE_NAMES[] = {"Chord", "Arp", "Meldy"};
 const char* SEQ_STATE_NAMES[] = {"Off", "Rec", "On"};
 const char* SEQ_DIR_NAMES[] = {"Fwd", "Bwd", "Rnd"};
 const char* SEQ_TRANSITION_NAMES[] = {"Trg", "Leg"};
@@ -276,18 +272,32 @@ const char* ADSR_ABRV[] = {"DL", "A", "LV", "D", "S", "R"};
 const char* TABLE_SIZES[] = {"256", "512", "1024", "2048"};
 const uint16_t TABLE_SIZE_VALUES[] = {256, 512, 1024, 2048};
 const uint8_t TABLE_SIZE_COUNT = sizeof(TABLE_SIZE_VALUES) / sizeof(TABLE_SIZE_VALUES[0]);
+bool changed = false;
+const float DURATION_PRESETS[] = {
+  0.125f, // 1/32 (Fusa)
+  0.25f,  // 1/16 (Semicorchea - valor por defecto)
+  0.375f, // Semicorchea.
+  0.5f,   // 1/8  (Corchea)
+  0.75f,  // Corchea.
+  1.0f,   // 1/4  (Negra)
+  1.5f,   // Negra.
+  2.0f,   // 1/2  (Blanca)
+  3.0f,   // Blanca.
+  4.0f,   // 1/1  (Redonda)
 
+};
+const char* DURATION_NAMES[] = {"fs","sc","sc*","ch","ch*","ng","ng*","bl","bl*","rd"};
 enum EnvState : uint8_t {ENV_IDLE = 0, ENV_DELAY, ENV_ATTACK, ENV_DECAY, ENV_SUSTAIN, ENV_RELEASE};
-enum LfoWaveform : uint8_t {LFO_SINE = 0, LFO_TRIANGLE, LFO_SAW, LFO_SQUARE, LFO_PULSE, LFO_WAVE_COUNT};
-enum LfoTarget : uint8_t {LFO_TARGET_PITCH = 0, LFO_TARGET_VOLUME, LFO_TARGET_CUTOFF, LFO_TARGET_COUNT};
+enum LfoWaveform : uint8_t {LFO_SINE = 0, LFO_TRIANGLE, LFO_SAW, LFO_SQUARE, LFO_PULSE,LFO_SAMPHOLD, LFO_CHAOS, LFO_WAVE_COUNT};
+enum LfoTarget : uint8_t {LFO_TARGET_PITCH = 0, LFO_TARGET_VOLUME, LFO_TARGET_CUTOFF, LFO_TARGET_OSCMIX, LFO_TARGET_FX, LFO_TARGET_COUNT};
 enum FxMode : uint8_t {FX_CHORUS = 0, FX_FLANGER};
-enum MorphMode : uint8_t {MORPH_HARD = 0, MORPH_EQUAL};
+enum MorphMode : uint8_t {MORPH_HARD = 0, MORPH_EQUAL, MORPH_LFO, MORPH_ENV};
 enum ArpMode : uint8_t {ARP_UP = 0, ARP_DOWN, ARP_UPDOWN, ARP_RANDOM, ARP_PATTERN, ARP_DOWNUP, ARP_INOUT, ARP_OUTIN, ARP_MODE_COUNT};
 enum ArpHold : uint8_t {HOLD_OFF = 0, HOLD_ORDER, HOLD_PLAY, HOLD_STACK, ARP_HOLD_COUNT};
 enum SeqTransitionMode : uint8_t {SEQ_TRANS_RETRIG = 0, SEQ_TRANS_LEGATO, SEQ_TRANS_COUNT};
 enum ChordType : uint8_t {CHORD_MAJOR = 0,CHORD_MINOR,CHORD_SUS2,CHORD_SUS4,CHORD_POWER,CHORD_MAJ7,CHORD_MIN7,CHORD_DOM7,CHORD_PLAYED,CHORD_REST,CHORD_END,CHORD_TYPE_COUNT};
-enum SequencerMode : uint8_t {SEQ_MODE_CHORD = 0,SEQ_MODE_ARP,SEQ_MODE_COUNT};
-enum SequencerState : uint8_t {SEQ_STATE_OFF = 0,SEQ_STATE_REC,SEQ_STATE_ON,SEQ_STATE_COUNT};
+enum SequencerMode : uint8_t {SEQ_MODE_CHORD = 0,  SEQ_MODE_ARP, SEQ_MODE_MELODY, SEQ_MODE_COUNT};
+enum SequencerState : uint8_t {SEQ_STATE_OFF = 0, SEQ_STATE_REC, SEQ_STATE_ON, SEQ_STATE_COUNT};
 enum MemoryMode : uint8_t {MEMORY_PSRAM = 0, MEMORY_INTERNAL = 1};
 enum WaveOrder : uint8_t {WAVE_START = 0, WAVE_END};
 
@@ -334,13 +344,17 @@ float detuneAmount = 0.01f;  // 1% inicial
 float oscMix = 0.5f;        // mezcla entre osc0 y osc1
 
 float attackInc[N_OSC] = {0.0f, 0.0f};
+float attackLevel[N_OSC] = {0.0f, 0.0f};
 float decayInc[N_OSC] = {0.0f, 0.0f};
 float releaseInc[N_OSC] = {0.0f, 0.0f};
+float delayTime[N_OSC] = {0.0f, 0.0f};
+float sustainLevel[N_OSC] = {0.0f, 0.0f};
 
 float morphDepth = 0.5f;       // Intensidad del movimiento (0.0f = estático, 1.0f = barrido total)
 float morphBase = 0.5f;                // Posición central del Morph (el valor del potenciómetro físico)
 float morphRateHz = 0.5f;        // velocidad del lfo 0.01 lento,  1 = rapido
-float morphEnabled = 0.0f;  
+float morphEnabled = 0.0f;
+float morphEnvDepth = 0.5f;  
 MorphMode morphMode = MORPH_HARD;   
 
 float masterGain = 1.5f;  // Ajusta según necesites
@@ -362,6 +376,9 @@ float filterCutoffHz = 1200.0f;
 float filterState = 0.0f;
 float filterResonance = 0.20f;//para compatibilidad
 float filterBp = 0.0f;  // Band pass 
+float lfoSHValue = 0.0f;
+float lfoChaosValue = 0.0f;
+float lastLfoPhase = 0.0f;
 
 float glideTime = 0.0f;
 float lastNoteFreq = 440.0f;
@@ -416,7 +433,7 @@ float chordVelocityScale = 1.0f;
 float chordSpread = 0.0f;
 uint8_t chordDensity = 4;
 uint8_t chordStrumMs = 0;
-const uint8_t MAX_CHORD_NOTES = 8;
+const uint8_t MAX_CHORD_NOTES = 6;
 uint8_t chordGeneratedCount[128] = {0};
 uint8_t chordGeneratedNotes[128][MAX_CHORD_NOTES] = {{0}};
 const uint8_t MAX_PENDING_CHORD_NOTES = 16;
@@ -433,9 +450,9 @@ bool sequencerEnabled = false;
 SequencerState sequencerState = SEQ_STATE_OFF;
 uint8_t sequencerEditStep = 0;
 uint8_t sequencerPlayStep = 0;
-//uint8_t stepsForSeq = 16; declarado mas arriba
+const uint8_t stepsForSeq = 16;
 const uint8_t SEQUENCER_MAX_PLAYED_NOTES = MAX_CHORD_NOTES;
-
+const uint8_t MAX_MELODY_NOTES = 16;
 struct SequencerStep {
   SequencerMode mode;
   uint8_t root;
@@ -456,9 +473,16 @@ struct SequencerStep {
   uint8_t arpPatternMask;
   uint8_t bars;
   uint8_t velocity;
+  uint8_t melodyNotes[MAX_MELODY_NOTES];
+  float   melodyDurations[MAX_MELODY_NOTES]; // Multiplicador del beat (ej: 0.25 = 1/16, 0.5 = 1/8)
+  uint8_t melodyVelocities[MAX_MELODY_NOTES];
+  uint8_t melodyCount;                       // Cantidad real de notas (1 a 16)
+  bool layerChord; // true = Toca el acorde sostenido en el fondo durante este paso
 };
-const SequencerStep SEQUENCER_DEFAULT_STEP = {SEQ_MODE_CHORD, 60, CHORD_REST, 0, {0}, 0, 0, 1.0f, 0.0f, 0, 4, 6.0f, ARP_UP, 1, 0.65f, 0.0f, 0xFF, 1, 100};
 SequencerStep* sequencerSteps = nullptr;
+
+const SequencerStep SEQUENCER_DEFAULT_STEP = {SEQ_MODE_CHORD, 60, CHORD_REST, 0, {0}, 0, 0, 1.0f, 0.0f, 0, 4, 6.0f, ARP_UP, 1, 0.65f, 0.0f, 0xFF, 1, 100};
+
 uint16_t sequencerBpm = 120;
 uint32_t sequencerNextStepMs = 0;
 uint32_t sequencerStepStartMs = 0;
@@ -475,6 +499,16 @@ uint8_t sequencerPlayBar = 1;
 uint8_t sequencerUiStepShown = 0xFF;
 uint8_t sequencerUiBarShown = 0xFF;
 SeqTransitionMode sequencerTransitionMode = SEQ_TRANS_LEGATO;
+bool sequencerHasLayeredChord = false; // Indica si hay un acorde de fondo sonando
+
+uint8_t  sequencerMelodyIndex = 0;
+uint32_t sequencerMelodyNextMs = 0;
+uint32_t sequencerMelodyOffMs = 0;
+uint8_t  sequencerActiveMelodyNote = 0;
+bool     sequencerMelodyNoteOn = false;
+uint8_t lastMelodyEditStep = 255;
+const uint8_t MELODY_NOTE_REST = 255;
+uint8_t selectedDurationIdx = 1; //selector de duracion de nota
 
 char presetEditName[PN_LEN + 1] = "INIT";
 const char PRESET_CHARS[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
@@ -500,15 +534,23 @@ struct StoredPreset {
 void IRAM_ATTR isrEnc() { updateEnc = true; }
 void IRAM_ATTR isrBtn() { updateBtn = true; }
 
-void updateEnvelopeRates() {
-  for (uint8_t osc = 0; osc < N_OSC; osc++) {
-    float attackLevel = constrain(ADSRvalues[osc][ATTACK_LEVEL], 0.0f, 1.0f);
-    float sustainLevel = constrain(ADSRvalues[osc][SUSTAIN], 0.0f, 1.0f);
-    float releaseLevel = max(attackLevel, sustainLevel);
-    attackInc[osc]  = (ADSRvalues[osc][ATTACK] <= 0.0001f) ? attackLevel : attackLevel / (ADSRvalues[osc][ATTACK] * SAMPLE_RATE);
-    decayInc[osc]   = (ADSRvalues[osc][DECAY] <= 0.0001f) ? (attackLevel - sustainLevel) : (attackLevel - sustainLevel) / (ADSRvalues[osc][DECAY] * SAMPLE_RATE);
-    releaseInc[osc] = (ADSRvalues[osc][RELEASE] <= 0.0001f) ? releaseLevel : releaseLevel / (ADSRvalues[osc][RELEASE] * SAMPLE_RATE);
-  }
+void updateEnvelopeRates(uint8_t osc) {
+  float attackLev = ADSRvalues[osc][ATTACK_LEV] * 0.01f;//constrain(, 0.0f, 1.0f)
+  float sustainLev = ADSRvalues[osc][SUSTAIN] * 0.01f;//constrain(, 0.0f, 1.0f)
+  float releaseLev = max(attackLev, sustainLev);
+  float attack = ADSRvalues[osc][ATTACK] * 0.001f;
+  float decay = ADSRvalues[osc][DECAY] * 0.001f;
+  float release = ADSRvalues[osc][RELEASE] * 0.001f;
+  
+  delayTime[osc] = ADSRvalues[osc][DELAY] * 0.001f;
+  attackInc[osc]  = (attack <= 0.0001f) ? attackLev : attackLev / (attack * SAMPLE_RATE);
+  decayInc[osc]   = (decay <= 0.0001f) ? (attackLev - sustainLev) : (attackLev - sustainLev) / (decay * SAMPLE_RATE);
+  releaseInc[osc] = (release <= 0.0001f) ? releaseLev : releaseLev / (release * SAMPLE_RATE);
+  attackLevel[osc] = attackLev;
+  sustainLevel[osc] = sustainLev;
+
+  oscMix = ADSRmixValues[0] * 0.01f;
+  detuneAmount = ADSRmixValues[1] * 0.01f;
 }
 
 float softClipAudio(float x) {
@@ -613,17 +655,43 @@ float resonanceToQ(float resonance) {
 }
 
 float lfoWaveValue() {
+  // Detectar si el LFO ha completado un ciclo para actualizar las ondas aleatorias
+  bool nuevoCiclo = false;
+  if (lfoPhase < lastLfoPhase) { 
+    nuevoCiclo = true; 
+  }
+  lastLfoPhase = lfoPhase;
+
   switch (lfoWaveform) {
     case LFO_TRIANGLE: {
       float norm = lfoPhase / (2.0f * PI);
       return 4.0f * fabsf(norm - 0.5f) - 1.0f;
     }
+
     case LFO_SAW:
       return (lfoPhase / PI) - 1.0f;
+
     case LFO_SQUARE:
       return (lfoPhase < PI) ? 1.0f : -1.0f;
+
     case LFO_PULSE:
       return ((lfoPhase / (2.0f * PI)) < varPulse) ? 1.0f : -1.0f;
+
+    case LFO_SAMPHOLD:
+      if (nuevoCiclo) {
+        // Genera un valor aleatorio entre -1.0f y 1.0f al inicio de cada ciclo
+        lfoSHValue = ((float)random(0, 20000) / 10000.0f) - 1.0f;
+      }
+      return lfoSHValue;
+
+    case LFO_CHAOS:
+      if (nuevoCiclo) {
+        // Camina aleatoriamente sumando o restando un pequeño diferencial
+        float target = ((float)random(0, 20000) / 10000.0f) - 1.0f;
+        lfoChaosValue += (target - lfoChaosValue) * 0.4f; // Ajusta el coeficiente para más/menos suavidad
+      }
+      return lfoChaosValue;
+
     case LFO_SINE:
     default:
       return sinf(lfoPhase);
@@ -911,113 +979,144 @@ void setupI2S() {
 }
 
 void audioTask(void *param) {
-  int16_t buffer[BUFFER_AUDIO];          // 128 muestras estéreo
-  size_t bytesWritten;
-  float dacDiagPhase = 0.0f;
-  uint32_t audioBlockCounter = 0;
+  int16_t buffer[BUFFER_AUDIO];          // 128 muestras estéreo 
+  size_t bytesWritten; 
+  float dacDiagPhase = 0.0f; 
+  uint32_t audioBlockCounter = 0; 
+  float activeFxFeedback = modFxFeedback; 
+  float activeFxBaseMs = modFxBaseMs; 
+  float activeOscMix = oscMix; 
 
-  while (true) {
-    
-    const float modFxFeedbackClamped = constrain(modFxFeedback, -0.95f, 0.95f);
+  while (true) { 
+    const float modFxFeedbackClamped = constrain(modFxFeedback, -0.95f, 0.95f); 
 
-    bool anyVoiceActive = false;
-    uint8_t activeVoiceCount = 0;
-    for (int v = 0; v < NUM_VOICES; v++) {
-      if (voices[v].active) {
-        anyVoiceActive = true;
-        activeVoiceCount++;
+    bool anyVoiceActive = false; 
+    uint8_t activeVoiceCount = 0; 
+    for (int v = 0; v < NUM_VOICES; v++) { 
+      if (voices[v].active) { 
+        anyVoiceActive = true; 
+        activeVoiceCount++; 
       }
     }
-    const float polyVoiceGain = (activeVoiceCount > 1) ? (1.0f / sqrtf((float)activeVoiceCount)) : 1.0f;
+    const float polyVoiceGain = (activeVoiceCount > 1) ? (1.0f / sqrtf((float)activeVoiceCount)) : 1.0f; 
     
-    const bool runModFx = (modFxEnabled >= 0.5f);
-    //const bool runReverb = (reverbMix > 0.005f);
-    const float lfoAttackInc = (lfoAttackTime <= 0.0001f) ? 1.0f : 1.0f / (lfoAttackTime * SAMPLE_RATE);
-    const float lfoPhaseInc = (2.0f * PI * lfoRateHz) / SAMPLE_RATE;
-    const float modFxPhaseInc = (2.0f * PI * modFxRateHz) / SAMPLE_RATE;
-    const bool cutoffModulated = (lfoTarget == LFO_TARGET_CUTOFF);
-    const float baseCutoffHz = cutoffControlToHz(cutoffControl);
-    float filterG = 0.0f;
-    float filterR = 0.0f;
-    float filterH = 0.0f;
+    // El LFO solo procesa si está activado físicamente Y hay voces sonando
+    const bool LFOEnabled = (lfoDepth > 0.001f) && anyVoiceActive;  
+    
+    const bool runModFx = (modFxEnabled >= 0.5f); 
+    const float lfoAttackInc = (lfoAttackTime <= 0.0001f) ? 1.0f : 1.0f / (lfoAttackTime * SAMPLE_RATE); 
+    const float lfoPhaseInc = (2.0f * PI * lfoRateHz) / SAMPLE_RATE; 
+    const float modFxPhaseInc = (2.0f * PI * modFxRateHz) / SAMPLE_RATE; 
+    const bool cutoffModulated = (lfoTarget == LFO_TARGET_CUTOFF) && (lfoDepth > 0.001f); // Solo modulado si depth > 0 
+    
+    const float baseCutoffHz = cutoffControlToHz(cutoffControl); 
+    float filterG = 0.0f; 
+    float filterR = 0.0f; 
+    float filterH = 0.0f; 
 
-    if (!cutoffModulated) {
-      float cutoffHz = constrain(baseCutoffHz, 20.0f, SAMPLE_RATE * 0.45f);
-      filterG = tanf(PI * cutoffHz / SAMPLE_RATE);
-      float q = resonanceToQ(filterResonance);
-      filterR = 1.0f / (2.0f * q);
-      filterH = 1.0f / (1.0f + (2.0f * filterR * filterG) + (filterG * filterG));
+    // OPTIMIZACIÓN: Bypass del filtro si está abierto al máximo y no hay modulación LFO
+    const bool filterBypass = (baseCutoffHz > 18000.0f) && !cutoffModulated;
+
+    // Coeficientes fijos si el filtro no se modula por LFO y no está en bypass
+    if (!cutoffModulated && !filterBypass) { 
+      float cutoffHz = constrain(baseCutoffHz, 20.0f, SAMPLE_RATE * 0.45f); 
+      filterG = tanf(PI * cutoffHz / SAMPLE_RATE); 
+      float q = resonanceToQ(filterResonance); 
+      filterR = 1.0f / (2.0f * q); 
+      filterH = 1.0f / (1.0f + (2.0f * filterR * filterG) + (filterG * filterG)); 
     }
 
-    uint16_t scopeWrite = audioScopeWriteIndex;
+    uint16_t scopeWrite = audioScopeWriteIndex; 
+    float morphInc = morphRateHz / SAMPLE_RATE;  
 
-    float morphInc = morphRateHz / SAMPLE_RATE; 
+    for (int i = 0; i < BUFFER_AUDIO; i += 2) { 
+      float mix = 0.0f; 
+      float pitchRatio = 1.0f; // Por defecto sin modulación 
+      float ampMod = 1.0f;     // Por defecto sin modulación 
+      float effectiveLfoDepth = 0.0f; 
+      float lfoValue = 0.0f;
 
-
-    for (int i = 0; i < BUFFER_AUDIO; i += 2) {
-
-
-      float mix = 0.0f;
-      if (resetLfoAttackRequested) {
-        lfoAttackLevel = 0.0f;
-        lfoPitchValueSmoothed = lfoWaveValue();
-        lfoPitchRatioCached = 1.0f;
-        lfoPitchUpdateCountdown = 0;
-        resetLfoAttackRequested = false;
-      }
-
-      if (anyVoiceActive) {
-        lfoAttackLevel += lfoAttackInc;
-        if (lfoAttackLevel > 1.0f) lfoAttackLevel = 1.0f;
-      }
-      else {
-        lfoAttackLevel = 0.0f;
-      }
-
-
-
-      float effectiveLfoDepth = lfoDepth * lfoAttackLevel;
-      float lfoValue = lfoWaveValue();
-      float pitchRatio = 1.0f;
-      float ampMod = 1.0f;
-
-      if (lfoTarget == LFO_TARGET_PITCH) {
-        if (lfoPitchUpdateCountdown == 0) {
-          // Suaviza formas no sinusoidales y evita exp2f() en cada muestra.
-          if (!anyVoiceActive) lfoPitchValueSmoothed = lfoValue;
-          lfoPitchValueSmoothed += (lfoValue - lfoPitchValueSmoothed) * 0.003f;
-          float pitchCents = lfoPitchValueSmoothed * effectiveLfoDepth * 100.0f;
-          lfoPitchRatioCached = exp2f(pitchCents / 1200.0f);
-          lfoPitchUpdateCountdown = lfoPitchUpdateSamples;
+      if (LFOEnabled) { 
+        if (resetLfoAttackRequested) { 
+          lfoAttackLevel = 0.0f;
+          lfoPitchValueSmoothed = lfoWaveValue(); 
+          lfoPitchRatioCached = 1.0f; 
+          lfoPitchUpdateCountdown = 0; 
+          resetLfoAttackRequested = false; 
         }
-        lfoPitchUpdateCountdown--;
-        pitchRatio = lfoPitchRatioCached;
-      }
-      else if (lfoTarget == LFO_TARGET_VOLUME) {
-        lfoPitchRatioCached = 1.0f;
-        lfoPitchUpdateCountdown = 0;
-        ampMod = 1.0f - (0.5f * effectiveLfoDepth * (lfoValue + 1.0f));
-      }
-      else if (lfoTarget == LFO_TARGET_CUTOFF) {
-        lfoPitchRatioCached = 1.0f;
-        lfoPitchUpdateCountdown = 0;
-        float currentCutoffHz = baseCutoffHz + (lfoValue * effectiveLfoDepth * 2500.0f);
-        currentCutoffHz = constrain(currentCutoffHz, 80.0f, 8000.0f);
-        filterG = tanf(PI * currentCutoffHz / SAMPLE_RATE);
-        float q = resonanceToQ(filterResonance);
-        filterR = 1.0f / (2.0f * q);
-        filterH = 1.0f / (1.0f + (2.0f * filterR * filterG) + (filterG * filterG));
-      }
+
+        lfoAttackLevel += lfoAttackInc; 
+        if (lfoAttackLevel > 1.0f) lfoAttackLevel = 1.0f; 
+
+        effectiveLfoDepth = lfoDepth * lfoAttackLevel; 
+        lfoValue = lfoWaveValue(); 
+
+        if (lfoTarget == LFO_TARGET_PITCH) { 
+          if (lfoPitchUpdateCountdown == 0) { 
+            lfoPitchValueSmoothed += (lfoValue - lfoPitchValueSmoothed) * 0.003f; 
+            float pitchCents = lfoPitchValueSmoothed * effectiveLfoDepth * 100.0f; 
+            lfoPitchRatioCached = exp2f(pitchCents / 1200.0f); 
+            lfoPitchUpdateCountdown = lfoPitchUpdateSamples; 
+          } 
+          lfoPitchUpdateCountdown--; 
+          pitchRatio = lfoPitchRatioCached; 
+        }
+        else if (lfoTarget == LFO_TARGET_VOLUME) { 
+          lfoPitchRatioCached = 1.0f; 
+          lfoPitchUpdateCountdown = 0; 
+          ampMod = 1.0f - (0.5f * effectiveLfoDepth * (lfoValue + 1.0f)); 
+        }
+        else if (lfoTarget == LFO_TARGET_CUTOFF) { 
+          lfoPitchRatioCached = 1.0f; 
+          lfoPitchUpdateCountdown = 0; 
+          
+          // Solo calcula tanf() de coeficientes si la modulación es real
+          if (effectiveLfoDepth > 0.0001f) { 
+            float currentCutoffHz = baseCutoffHz + (lfoValue * effectiveLfoDepth * 2500.0f); 
+            currentCutoffHz = constrain(currentCutoffHz, 80.0f, 8000.0f); 
+            filterG = tanf(PI * currentCutoffHz / SAMPLE_RATE); 
+            float q = resonanceToQ(filterResonance); 
+            filterR = 1.0f / (2.0f * q); 
+            filterH = 1.0f / (1.0f + (2.0f * filterR * filterG) + (filterG * filterG)); 
+          } 
+        }
+        else if (lfoTarget == LFO_TARGET_OSCMIX){ 
+          lfoPitchRatioCached = 1.0f; 
+          lfoPitchUpdateCountdown = 0; 
+          activeOscMix = oscMix + (lfoValue * effectiveLfoDepth * 0.5f); 
+          activeOscMix = constrain(activeOscMix, 0.0f, 1.0f); 
+        }
+        else if (lfoTarget == LFO_TARGET_FX) { 
+          lfoPitchRatioCached = 1.0f; 
+          lfoPitchUpdateCountdown = 0;
+          activeFxFeedback = modFxFeedback + (lfoValue * effectiveLfoDepth * 0.5f); 
+          activeFxFeedback = constrain(activeFxFeedback, -0.90f, 0.90f); 
+          activeFxBaseMs = modFxBaseMs + (lfoValue * effectiveLfoDepth * 8.0f); 
+          activeFxBaseMs = constrain(activeFxBaseMs, 1.0f, 24.0f);  
+        }
+        /*
+        else {
+          lfoPitchValueSmoothed = lfoValue;
+          lfoPitchRatioCached = 1.0f;
+          lfoPitchUpdateCountdown = 0;
+          pitchRatio = 1.0f;
+          activeFxFeedback = modFxFeedback;
+          activeFxBaseMs = modFxBaseMs;
+          activeOscMix = oscMix;
+        }
+        */
+        lfoPhase += lfoPhaseInc; 
+        if (lfoPhase >= 2.0f * PI) lfoPhase -= 2.0f * PI; 
+      } 
       else {
-        lfoPitchValueSmoothed = lfoValue;
-        lfoPitchRatioCached = 1.0f;
-        lfoPitchUpdateCountdown = 0;
-        pitchRatio = 1.0f;
+        // Valores por defecto estáticos y limpios si el LFO está inactivo
+        lfoAttackLevel = 0.0f; 
+        activeOscMix = oscMix; 
+        activeFxFeedback = modFxFeedback; 
+        activeFxBaseMs = modFxBaseMs; 
       }
 
-      lfoPhase += lfoPhaseInc;
-      if (lfoPhase >= 2.0f * PI) lfoPhase -= 2.0f * PI;
-
+     
       if (arpEnabled) {
         if (arpHeldCount == 0) {
           if (arpGateActive) {
@@ -1060,9 +1159,10 @@ void audioTask(void *param) {
         }
       }
 
-      for (int v = 0; v < NUM_VOICES; v++) {
+      float glideSamples = glideTime * SAMPLE_RATE;  
 
-        if (!voices[v].active) continue;
+      for (int v = 0; v < NUM_VOICES; v++) { 
+        if (!voices[v].active) continue; 
 
         // ---------- ENVOLVENTE ----------
         bool allOscIdle = true;
@@ -1078,22 +1178,20 @@ void audioTask(void *param) {
               break;
 
             case ENV_ATTACK: {
-              float attackLevel = constrain(ADSRvalues[osc][ATTACK_LEVEL], 0.0f, 1.0f);
               voices[v].envLevel[osc] += attackInc[osc];
-              if (voices[v].envLevel[osc] >= attackLevel) {
-                voices[v].envLevel[osc] = attackLevel;
+              if (voices[v].envLevel[osc] >= attackLevel[osc]) {
+                voices[v].envLevel[osc] = attackLevel[osc];
                 voices[v].envState[osc] = ENV_DECAY;
               }
               break;
             }
 
             case ENV_DECAY: {
-              float sustainLevel = constrain(ADSRvalues[osc][SUSTAIN], 0.0f, 1.0f);
               float step = decayInc[osc];
               voices[v].envLevel[osc] -= step;
-              if ((step >= 0.0f && voices[v].envLevel[osc] <= sustainLevel) ||
-                  (step < 0.0f && voices[v].envLevel[osc] >= sustainLevel)) {
-                voices[v].envLevel[osc] = sustainLevel;
+              if ((step >= 0.0f && voices[v].envLevel[osc] <= sustainLevel[osc]) ||
+                  (step < 0.0f && voices[v].envLevel[osc] >= sustainLevel[osc])) {
+                voices[v].envLevel[osc] = sustainLevel[osc];
                 voices[v].envState[osc] = ENV_SUSTAIN;
               }
               break;
@@ -1123,11 +1221,21 @@ void audioTask(void *param) {
         }
 
         // ---------- OSCILADORES ----------
+
         if (glideTime > 0.0001f) {
-          uint32_t glideStep0 = (uint32_t)(fabs((float)((int32_t)voices[v].targetPhaseInc0 - (int32_t)voices[v].phaseInc0)) / (glideTime * SAMPLE_RATE));
-          uint32_t glideStep1 = (uint32_t)(fabs((float)((int32_t)voices[v].targetPhaseInc1 - (int32_t)voices[v].phaseInc1)) / (glideTime * SAMPLE_RATE));
-          if (glideStep0 < 1) glideStep0 = 1;
-          if (glideStep1 < 1) glideStep1 = 1;
+          
+          // --- Optimización de Glide para Oscilador ---
+          uint32_t diff0 = (voices[v].targetPhaseInc0 > voices[v].phaseInc0) ? 
+                         (voices[v].targetPhaseInc0 - voices[v].phaseInc0) : 
+                         (voices[v].phaseInc0 - voices[v].targetPhaseInc0);        
+          uint32_t glideStep0 = (diff0 < glideSamples) ? 1 : (diff0 / glideSamples);
+
+          uint32_t diff1 = (voices[v].targetPhaseInc1 > voices[v].phaseInc1) ? 
+                          (voices[v].targetPhaseInc1 - voices[v].phaseInc1) : 
+                          (voices[v].phaseInc1 - voices[v].targetPhaseInc1);             
+          uint32_t glideStep1 = (diff1 < glideSamples) ? 1 : (diff1 / glideSamples);
+          //uint32_t glideStep0 = (uint32_t)(fabs((float)((int32_t)voices[v].targetPhaseInc0 - (int32_t)voices[v].phaseInc0)) / (glideTime * SAMPLE_RATE));
+          //uint32_t glideStep1 = (uint32_t)(fabs((float)((int32_t)voices[v].targetPhaseInc1 - (int32_t)voices[v].phaseInc1)) / (glideTime * SAMPLE_RATE));
 
           if (voices[v].phaseInc0 < voices[v].targetPhaseInc0) {
             uint32_t next = voices[v].phaseInc0 + glideStep0;
@@ -1158,12 +1266,21 @@ void audioTask(void *param) {
           if (voices[v].morphPhase >= 1.0f) voices[v].morphPhase -= 1.0f;
 
           // 2. Calcular la oscilación senoidal
-          float lfoVal = sinf(2.0f * PI * voices[v].morphPhase);
+          float morphLfoVal = sinf(2.0f * PI * voices[v].morphPhase);
 
           if(morphMode == MORPH_HARD){
             // 3. Mezclar con el valor base del pote de morph y la intensidad (Depth)
-            voices[v].currentMorph = morphBase + (lfoVal * morphDepth);
+            voices[v].currentMorph = morphBase + (morphLfoVal * morphDepth);
             voices[v].currentMorph = constrain(voices[v].currentMorph, 0.0f, 1.0f);
+          }
+          else if(morphMode == MORPH_LFO){
+            float moddedMorph = morphBase + (lfoValue * effectiveLfoDepth); 
+            voices[v].currentMorph = constrain(moddedMorph, 0.0f, 1.0f);
+          }
+          else if (morphMode == MORPH_ENV) {
+            // Si en el futuro modularas el Morph con la Envolvente de Amplitud (envLevel) o de Filtro:
+            float moddedMorph = morphBase + (voices[v].envLevel[0] * morphDepth);
+            voices[v].currentMorph = constrain(moddedMorph, 0.0f, 1.0f);
           }
           else { //morphMode == MORPH_EQUAL
             // 3. CALCULAR EL ESPACIO MÁXIMO DISPONIBLE PARA QUE SEA SIMÉTRICO
@@ -1174,114 +1291,109 @@ void audioTask(void *param) {
             float safeDepth = morphDepth * maxAllowedDepth;
 
             // 5. Calcular la posición final (Ya no necesita 'constrain' porque matemáticamente nunca se saldrá de)
-            voices[v].currentMorph = morphBase + (lfoVal * safeDepth);
+            voices[v].currentMorph = morphBase + (morphLfoVal * safeDepth);
           }
         }
         else{
           voices[v].currentMorph = 0.0f; 
         }
 
-        // ---------- EXTRAER ÍNDICES ----------
-        uint32_t index0 = voices[v].phase0 >> tableFracBits;
-        uint32_t index1 = voices[v].phase1 >> tableFracBits;
+        // ---------- LECTURA OSCILADORES Y GENERACIÓN DE SAMPLE ----------
+        uint32_t index0 = voices[v].phase0 >> tableFracBits; 
+        uint32_t index1 = voices[v].phase1 >> tableFracBits; 
+        uint32_t frac0 = voices[v].phase0 & tableFracMask; 
+        uint32_t frac1 = voices[v].phase1 & tableFracMask; 
+        float osc0, osc1; 
 
-        uint32_t frac0 = voices[v].phase0 & tableFracMask;
-        uint32_t frac1 = voices[v].phase1 & tableFracMask;
-
-        float osc0, osc1;
-
-        if (morphEnabled) {
-          // Pasamos voices[v].currentMorph que ya fue calculado eficientemente por bloque
-          osc0 = readWaveSampleMorph(0, index0, frac0, voices[v].currentMorph);
-          osc1 = readWaveSampleMorph(1, index1, frac1, voices[v].currentMorph);
-        } 
-        else {
-          int16_t interp0 = readWaveSample(0, index0, frac0);
-          int16_t interp1 = readWaveSample(1, index1, frac1);
-
-          osc0 = interp0 * inv32768;
-          osc1 = interp1 * inv32768;
+        if (morphEnabled) { 
+          osc0 = readWaveSampleMorph(0, index0, frac0, voices[v].currentMorph); 
+          osc1 = readWaveSampleMorph(1, index1, frac1, voices[v].currentMorph); 
+        } else { 
+          osc0 = readWaveSample(0, index0, frac0) * inv32768; 
+          osc1 = readWaveSample(1, index1, frac1) * inv32768; 
         }
 
-        float sample = (osc0 * (1.0f - oscMix) * voices[v].envLevel[0]) +
-                       (osc1 * oscMix * voices[v].envLevel[1]);
+        float sample = (osc0 * (1.0f - activeOscMix) * voices[v].envLevel[0]) + (osc1 * activeOscMix * voices[v].envLevel[1]); 
+        mix += sample * voices[v].velocityGain * ampMod * 0.75f; 
 
-        mix += sample * voices[v].velocityGain * ampMod * 0.75f;
-
-        // Avance de fase con LFO sobre tono
-        uint32_t modPhaseInc0 = (uint32_t)(voices[v].phaseInc0 * pitchRatio);
-        uint32_t modPhaseInc1 = (uint32_t)(voices[v].phaseInc1 * pitchRatio);
-        voices[v].phase0 += modPhaseInc0;
-        voices[v].phase1 += modPhaseInc1;
+        uint32_t modPhaseInc0 = (uint32_t)(voices[v].phaseInc0 * pitchRatio); 
+        uint32_t modPhaseInc1 = (uint32_t)(voices[v].phaseInc1 * pitchRatio); 
+        voices[v].phase0 += modPhaseInc0; 
+        voices[v].phase1 += modPhaseInc1; 
       }
 
-      mix *= polyVoiceGain;
-      mix = softClipAudio(mix) * 1.6f;
+      mix *= polyVoiceGain; 
+      mix = softClipAudio(mix) * 1.6f; 
  
-      // Filtro low-pass resonante TPT SVF. Coeficientes por bloque salvo cutoff modulado.
-      float hp = (mix - ((2.0f * filterR + filterG) * filterBp) - filterState) * filterH;
-      float bp = (filterG * hp) + filterBp;
-      float lp = (filterG * bp) + filterState;
-      filterBp = constrain((2.0f * bp) - filterBp, -4.0f, 4.0f);
-      filterState = constrain((2.0f * lp) - filterState, -4.0f, 4.0f);
-      float filtered = constrain(lp, -1.0f, 1.0f);
-
-      float modOut = filtered;
-
-      if (runModFx) {
-        // Chorus/Flanger ligero: una sola línea de retardo modulada + interpolación lineal.
-        float modeBlend = constrain(roundf(modFxMode), 0.0f, 1.0f); // 0 chorus, 1 flanger
-        float lfo = sinf(modFxPhase);
-        float depthSamples = (modFxDepthMs * SAMPLE_RATE) * 0.001f;
-        float baseSamples = (modFxBaseMs * SAMPLE_RATE) * 0.001f;
-        float minSamples = 2.0f + (modeBlend * 1.0f);
-        float maxSamples = 36.0f + (modeBlend * 10.0f);
-        float dSamp = baseSamples + (lfo * depthSamples * (0.3f + 0.7f * modFxStereo));
-        dSamp = constrain(dSamp, minSamples, maxSamples);
-
-        int readA = modDelayWriteIndex - (int)dSamp;
-        if (readA < 0) readA += MOD_DELAY_BUFFER_SIZE;
-        int readB = readA + 1;
-        if (readB >= MOD_DELAY_BUFFER_SIZE) readB = 0;
-        float frac = dSamp - (int)dSamp;
-        float wetA = modDelayBuffer[readA] * inv32768;
-        float wetB = modDelayBuffer[readB] * inv32768;
-        float modWet = wetA + (wetB - wetA) * frac;
-
-        float modWrite = filtered + (modWet * modFxFeedbackClamped * 0.75f);
-        modDelayBuffer[modDelayWriteIndex] = (int16_t)(constrain(modWrite, -1.0f, 1.0f) * 32767.0f);
-        modDelayWriteIndex++;
-        if (modDelayWriteIndex >= MOD_DELAY_BUFFER_SIZE) modDelayWriteIndex = 0;
-
-        modOut = (filtered * (1.0f - modFxMix)) + (modWet * modFxMix);
-        modFxPhase += (2.0f * PI * modFxRateHz) / SAMPLE_RATE;
-        modFxPhase += modFxPhaseInc;
-        if (modFxPhase > 2.0f * PI) modFxPhase -= 2.0f * PI;
+      // ---------- PROCESADO DE FILTRO CON BYPASS INTELIGENTE ----------
+      float filtered;
+      if (!filterBypass) {
+        float hp = (mix - ((2.0f * filterR + filterG) * filterBp) - filterState) * filterH; 
+        float bp = (filterG * hp) + filterBp; 
+        float lp = (filterG * bp) + filterState; 
+        filterBp = constrain((2.0f * bp) - filterBp, -4.0f, 4.0f); 
+        filterState = constrain((2.0f * lp) - filterState, -4.0f, 4.0f); 
+        filtered = constrain(lp, -1.0f, 1.0f); 
+      } else {
+        // Si el filtro está abierto y sin modular, la señal pasa directa. ¡Cero coste CPU!
+        filtered = mix; 
       }
-      float outL = modOut;
-      float outR = modOut;
-      float fxOutL = outL;
-      float fxOutR = outR;
-      
-      int16_t outL_i = (int16_t)(softClipAudio(fxOutL * masterGain) * 32767);
-      int16_t outR_i = (int16_t)(softClipAudio(fxOutR * masterGain) * 32767);
 
-      buffer[i]     = outL_i;
-      buffer[i + 1] = outR_i;
-      audioScopeBuffer[scopeWrite] = outL_i;
-      scopeWrite++;
-      if (scopeWrite >= AUDIO_SCOPE_SAMPLES) scopeWrite = 0;
+      float modOut = filtered; 
+
+      // ---------- MOD FX (CHORUS / FLANGER) ----------
+      if (runModFx) { 
+        float modeBlend = constrain(roundf(modFxMode), 0.0f, 1.0f); 
+        float lfo = sinf(modFxPhase); 
+        float depthSamples = (modFxDepthMs * SAMPLE_RATE) * 0.001f; 
+        
+        float baseSamples = (lfoTarget == LFO_TARGET_FX) ? ((activeFxBaseMs * SAMPLE_RATE) * 0.001f) : ((modFxBaseMs * SAMPLE_RATE) * 0.001f); 
+        float minSamples = 2.0f + (modeBlend * 1.0f); 
+        float maxSamples = 36.0f + (modeBlend * 10.0f); 
+        float dSamp = baseSamples + (lfo * depthSamples * (0.3f + 0.7f * modFxStereo)); 
+        dSamp = constrain(dSamp, minSamples, maxSamples); 
+
+        int readA = modDelayWriteIndex - (int)dSamp; 
+        if (readA < 0) readA += MOD_DELAY_BUFFER_SIZE; 
+        int readB = readA + 1; 
+        if (readB >= MOD_DELAY_BUFFER_SIZE) readB = 0; 
+        float frac = dSamp - (int)dSamp; 
+        float wetA = modDelayBuffer[readA] * inv32768; 
+        float wetB = modDelayBuffer[readB] * inv32768; 
+        float modWet = wetA + (wetB - wetA) * frac; 
+
+        float modWrite = (lfoTarget == LFO_TARGET_FX) ? (filtered + (modWet * activeFxFeedback * 0.75f)) : (filtered + (modWet * modFxFeedbackClamped * 0.75f)); 
+        modDelayBuffer[modDelayWriteIndex] = (int16_t)(constrain(modWrite, -1.0f, 1.0f) * 32767.0f); 
+        modDelayWriteIndex++; 
+        if (modDelayWriteIndex >= MOD_DELAY_BUFFER_SIZE) modDelayWriteIndex = 0; 
+
+        modOut = (filtered * (1.0f - modFxMix)) + (modWet * modFxMix); 
+
+        // AVANCE DE FASE ÚNICO Y CORRECTO:
+        modFxPhase += modFxPhaseInc;      
+        if (modFxPhase > 2.0f * PI) modFxPhase -= 2.0f * PI; 
+
+      }
+      float outL = modOut; 
+      float outR = modOut; 
+      int16_t outL_i = (int16_t)(softClipAudio(outL * masterGain) * 32767); 
+      int16_t outR_i = (int16_t)(softClipAudio(outR * masterGain) * 32767); 
+
+      buffer[i]     = outL_i; 
+      buffer[i + 1] = outR_i; 
+      audioScopeBuffer[scopeWrite] = outL_i; 
+      scopeWrite++; 
+
+      if (scopeWrite >= AUDIO_SCOPE_SAMPLES) scopeWrite = 0; 
     }
-    audioScopeWriteIndex = scopeWrite;
-    audioScopeSerial += 1;
-
-    // Enviar bloque al DAC por I2S
-    i2s_write(I2S_NUM_0, buffer, sizeof(buffer), &bytesWritten, portMAX_DELAY);
-    audioBlockCounter++;
-    if ((audioBlockCounter & 0x1F) == 0) {
-      vTaskDelay(1);
-    } else {
-      taskYIELD();
+    audioScopeWriteIndex = scopeWrite; 
+    audioScopeSerial += 1; 
+    i2s_write(I2S_NUM_0, buffer, sizeof(buffer), &bytesWritten, portMAX_DELAY); 
+    audioBlockCounter++; 
+    if ((audioBlockCounter & 0x1F) == 0) { 
+      vTaskDelay(1); 
+    } else { 
+      taskYIELD(); 
     }
   }
 }
@@ -1403,7 +1515,8 @@ void setup() {
   // 5. Funciones de audio e interfaz
   drawUI();
 
-  updateEnvelopeRates();
+  updateEnvelopeRates(0);
+  updateEnvelopeRates(1);
   filterCutoffHz = cutoffControlToHz(cutoffControl);
   sequencerSteps = new SequencerStep[stepsForSeq];
   seqDefault(stepsForSeq);

@@ -13,6 +13,12 @@ uint8_t collectMidiHeldNotes(uint8_t* outNotes, uint8_t maxNotes) {
   return count;
 }
 
+void clearCurrentStepMelody() {
+  uint8_t step = sequencerEditStep & 0xF;
+  sequencerSteps[step].melodyCount = 0;
+  lastMelodyEditStep = 255; // Fuerza el reinicio
+}
+
 void processSequencer() {
   if (sequencerState != SEQ_STATE_ON || arpEnabled) return;
 
@@ -24,6 +30,10 @@ void processSequencer() {
     noteOff(sequencerActiveArpNote);
     sequencerArpNoteOn = false;
   }
+  if (sequencerMelodyNoteOn && (int32_t)(now - sequencerMelodyOffMs) >= 0) {
+    noteOff(sequencerActiveMelodyNote);
+    sequencerMelodyNoteOn = false;
+  }
 
   if (sequencerGateActive && (int32_t)(now - sequencerStepEndMs) >= 0) {
     bool keepForLegatoTransition =
@@ -31,13 +41,13 @@ void processSequencer() {
     if (!keepForLegatoTransition) {
       sequencerStopActiveNote();
     }
-    sequencerPlayStep = (sequencerPlayStep + 1) & 0x07;
+    sequencerPlayStep = (sequencerPlayStep + 1) & 0xF;
     sequencerPlayBar = 1;
     sequencerNextStepMs = now;
   }
 
   if (sequencerGateActive) {
-    uint8_t stepIdx = sequencerPlayStep & 0x07;
+    uint8_t stepIdx = sequencerPlayStep & 0xF;
     SequencerStep &seqStep = sequencerSteps[stepIdx];
     uint32_t barMs = 4UL * beatMs;
     uint8_t maxBars = max((uint8_t)1, seqStep.bars);
@@ -46,8 +56,41 @@ void processSequencer() {
     sequencerPlayBar = constrain(bar, (uint8_t)1, maxBars);
   }
 
+  if (sequencerGateActive && sequencerActiveMode == SEQ_MODE_MELODY) {
+    uint8_t stepIdx = sequencerPlayStep & 0xF;
+    SequencerStep &seqStep = sequencerSteps[stepIdx];
+
+    if (seqStep.melodyCount > 0 && sequencerMelodyIndex < seqStep.melodyCount) {
+      if ((int32_t)(now - sequencerMelodyNextMs) >= 0 && (int32_t)(sequencerStepEndMs - now) > 0) {
+        
+        // 1. Apagar nota previa si estaba encendida
+        if (sequencerMelodyNoteOn) {
+          noteOff(sequencerActiveMelodyNote);
+          sequencerMelodyNoteOn = false;
+        }
+
+        // 2. Obtener nota, velocidad y duración actuales
+        uint8_t note = seqStep.melodyNotes[sequencerMelodyIndex];
+        uint8_t vel  = seqStep.melodyVelocities[sequencerMelodyIndex];
+        float durFactor = seqStep.melodyDurations[sequencerMelodyIndex];
+
+        // 3. Encender nota
+        sequencerActiveMelodyNote = note;
+        if(note < 255) noteOn(note, vel);
+        sequencerMelodyNoteOn = true;
+
+        // 4. Calcular tiempos de apagado y de la siguiente nota
+        uint32_t noteDurationMs = (uint32_t)(beatMs * durFactor);
+        sequencerMelodyOffMs = now + (uint32_t)(noteDurationMs * seqStep.arpGate); // 90% gate
+        sequencerMelodyNextMs += noteDurationMs;
+
+        sequencerMelodyIndex++;
+      }
+    }
+  }
+
   if (sequencerGateActive && sequencerActiveMode == SEQ_MODE_ARP) {
-    uint8_t stepIdx = sequencerPlayStep & 0x07;
+    uint8_t stepIdx = sequencerPlayStep & 0xF;
     SequencerStep &seqStep = sequencerSteps[stepIdx];
     uint8_t velocity = constrain((int)seqStep.velocity, 1, 127);
     uint32_t arpTickMs = beatMs;
@@ -88,17 +131,22 @@ void processSequencer() {
     }
   }
 
-  if (currentPage == 5 &&
+  if (currentPage == PAGE_SEQ &&
       (sequencerUiStepShown != sequencerPlayStep || sequencerUiBarShown != sequencerPlayBar)) {
     drawExtraValue();
     sequencerUiStepShown = sequencerPlayStep;
     sequencerUiBarShown = sequencerPlayBar;
   }
 
+  // =========================================================================
+  // 1. INICIO DE UN NUEVO PASO (Se dispara cuando vence sequencerNextStepMs)
+  // =========================================================================
   if ((int32_t)(now - sequencerNextStepMs) < 0) return;
 
-  uint8_t stepIdx = sequencerPlayStep & 0x07;
+  uint8_t stepIdx = sequencerPlayStep & 0xF;
   SequencerStep &seqStep = sequencerSteps[stepIdx];
+
+  // Si encontramos la marca de FIN de secuencia
   if (seqStep.chord == CHORD_END) {
     sequencerStopActiveNote();
     sequencerPlayStep = 0;
@@ -107,6 +155,7 @@ void processSequencer() {
     return;
   }
 
+  // Actualizamos tiempos del nuevo paso
   uint32_t stepDurMs = (uint32_t)max((uint8_t)1, seqStep.bars) * 4UL * beatMs;
   sequencerStepStartMs = now;
   sequencerPlayBar = 1;
@@ -117,6 +166,7 @@ void processSequencer() {
   uint8_t root = seqStep.root;
   uint8_t velocity = constrain((int)seqStep.velocity, 1, 127);
 
+  // Si el paso es un SILENCIO total
   if (seqStep.chord == CHORD_REST) {
     sequencerStopActiveNote();
     sequencerActiveMode = SEQ_MODE_CHORD;
@@ -124,35 +174,52 @@ void processSequencer() {
     sequencerGateActive = true;
   }
   else {
+    // Manejo de transiciones Legato
     if (sequencerTransitionMode == SEQ_TRANS_LEGATO &&
         sequencerActiveMode == SEQ_MODE_CHORD &&
         mode != SEQ_MODE_CHORD) {
       stopChordFromRoot(sequencerActiveRoot);
     }
 
-    if (mode == SEQ_MODE_CHORD) {
+    // A) ¿DEBE SONAR UN ACORDE DE FONDO?
+    // Sonará si el paso es SEQ_MODE_CHORD O si tiene activado el flag layerChord
+    if (mode == SEQ_MODE_CHORD || seqStep.layerChord) {
       if (sequencerTransitionMode == SEQ_TRANS_RETRIG) {
         sequencerActiveRoot = root;
-        sequencerActiveMode = SEQ_MODE_CHORD;
         stopChordFromRoot(sequencerActiveRoot);
         playSequencerChordNotes(stepIdx, velocity);
-      }
-      else {
-        sequencerActiveMode = SEQ_MODE_CHORD;
+      } else {
         playSequencerChordNotes(stepIdx, velocity);
         sequencerActiveRoot = root;
       }
-      sequencerGateActive = true;
+      // Marcar si este acorde es una capa de fondo (acompañando a Melodía o Arpegio)
+      sequencerHasLayeredChord = (mode != SEQ_MODE_CHORD && seqStep.layerChord);
+    } else {
+      sequencerHasLayeredChord = false;
     }
-    else {
+
+    // B) ¿QUÉ MODO DE NAVEGACIÓN TEMPORAL TIENE EL PASO?
+    // Ajustamos las variables de control para las notas que irán sonando en tiempo real
+    if (mode == SEQ_MODE_MELODY) {
+      sequencerActiveMode = SEQ_MODE_MELODY;
+      sequencerGateActive = true;
+      sequencerMelodyIndex = 0;
+      sequencerMelodyNextMs = now; // Dispara la primera nota inmediatamente
+    }
+    else if (mode == SEQ_MODE_ARP) {
       sequencerActiveMode = SEQ_MODE_ARP;
       sequencerGateActive = true;
       sequencerArpIndex = 0;
-      sequencerArpNextMs = now;
+      sequencerArpNextMs = now; // Dispara el arpegio inmediatamente
+    }
+    else if (mode == SEQ_MODE_CHORD) {
+      sequencerActiveMode = SEQ_MODE_CHORD;
+      sequencerGateActive = true;
     }
   }
 
-  if (currentPage == 5 &&
+  // Refrescar pantalla si estamos en la página del secuenciador
+  if (currentPage == PAGE_SEQ &&
       (sequencerUiStepShown != sequencerPlayStep || sequencerUiBarShown != sequencerPlayBar)) {
     drawExtraValue();
     sequencerUiStepShown = sequencerPlayStep;
@@ -161,7 +228,7 @@ void processSequencer() {
 }
 
 uint8_t buildSequencerStepNotes(uint8_t step, uint8_t* notesOut, uint8_t maxNotes) {
-  step &= 0x07;
+  step &= 0xF;
   SequencerStep &seqStep = sequencerSteps[step];
   if (seqStep.chord == CHORD_REST || seqStep.chord == CHORD_END) return 0;
   if (seqStep.chord == CHORD_PLAYED && seqStep.playedCount > 0) {
@@ -206,7 +273,7 @@ void seqDefault(uint8_t steps){
 }
 
 void playSequencerChordNotes(uint8_t step, uint8_t velocity) {
-  step &= 0x07;
+  step &= 0xF;
   SequencerStep &seqStep = sequencerSteps[step];
   uint8_t rootNote = seqStep.root;
   uint8_t oldRoot = sequencerActiveRoot;
@@ -249,22 +316,72 @@ void playSequencerChordNotes(uint8_t step, uint8_t velocity) {
 }
 
 void sequencerStopActiveNote() {
-  if (!sequencerGateActive) return;
-  if (sequencerActiveMode == SEQ_MODE_CHORD) stopChordFromRoot(sequencerActiveRoot);
-  else if (sequencerArpNoteOn) noteOff(sequencerActiveArpNote);
-  sequencerArpNoteOn = false;
+  if (!sequencerGateActive && !sequencerHasLayeredChord) return;
+
+  // 1. Apagar el acorde de fondo si existía
+  if (sequencerHasLayeredChord || sequencerActiveMode == SEQ_MODE_CHORD) {
+    stopChordFromRoot(sequencerActiveRoot);
+    sequencerHasLayeredChord = false;
+  }
+
+  // 2. Apagar la nota del arpegio/melodía activa
+  if (sequencerArpNoteOn) {
+    noteOff(sequencerActiveArpNote);
+    sequencerArpNoteOn = false;
+  }
+
+  // 3. Apagar la nota activa de la melodía
+  if (sequencerMelodyNoteOn) {
+    noteOff(sequencerActiveMelodyNote);
+    sequencerMelodyNoteOn = false;
+  }
+
   sequencerGateActive = false;
 }
-
 void captureSequencerStepFromMidi(uint8_t velocity) {
-  if (currentPage != 5 || sequencerState != SEQ_STATE_REC) return;
+  if (currentPage != PAGE_SEQ || sequencerState != SEQ_STATE_REC) return;
 
   uint8_t held[SEQUENCER_MAX_PLAYED_NOTES] = {0};
   uint8_t count = collectMidiHeldNotes(held, SEQUENCER_MAX_PLAYED_NOTES);
   if (count == 0) return;
 
-  uint8_t step = sequencerEditStep & 0x07;
+  uint8_t step = sequencerEditStep & 0xF;
   SequencerStep &seqStep = sequencerSteps[step];
+
+  // =========================================================
+  // MODO MELODÍA: Grabación acumulativa (Paso a Paso)
+  // =========================================================
+  if (seqStep.mode == SEQ_MODE_MELODY) {
+    
+    // Si cambiamos de paso o es la primera nota, reiniciamos el contador
+    if (lastMelodyEditStep != step) {
+      seqStep.melodyCount = 0;
+      lastMelodyEditStep = step;
+    }
+
+    // Si aún hay espacio en el buffer (máximo 16 notas)
+    if (seqStep.melodyCount < MAX_MELODY_NOTES) {
+      uint8_t idx = seqStep.melodyCount;
+      
+      seqStep.melodyNotes[idx]      = held[0]; // Capturamos la primera nota presionada
+      seqStep.melodyVelocities[idx] = constrain((int)velocity, 20, 120);
+      seqStep.melodyDurations[idx]  = DURATION_PRESETS[selectedDurationIdx];   // Duración seleccionada
+      
+      seqStep.melodyCount++; // Incrementamos el total de notas de este paso
+    }
+
+    // Actualizar la pantalla del sintetizador
+    if (!suppressUiRefresh && currentPage == PAGE_SEQ) {
+      drawValue(3); // Muestra la última nota ingresada
+      drawValue(6); // Muestra la velocidad o cantidad de notas
+    }
+    return;
+  }
+
+  // =========================================================
+  // MODOS CHORD / ARP: Lógica original (Captura instantánea)
+  // =========================================================
+  lastMelodyEditStep = 255; // Resetea el control de melodía al cambiar de modo
   uint8_t root = held[0];
   seqStep.root = root;
   seqStep.velocity = constrain((int)velocity, 20, 120);
@@ -287,11 +404,26 @@ void captureSequencerStepFromMidi(uint8_t velocity) {
   synthValue[5][3] = (float)seqStep.root;
   synthValue[5][4] = (float)seqStep.chord;
   synthValue[5][6] = (float)seqStep.velocity;
-  if (!suppressUiRefresh && currentPage == 5) {
+  if (!suppressUiRefresh &&  currentPage == PAGE_SEQ) {
     drawValue(2);
     drawValue(3);
     drawValue(4);
     drawValue(6);
+  }
+}
+
+void insertMelodyRest() {
+  if (currentPage != PAGE_SEQ || sequencerState != SEQ_STATE_REC) return;
+  
+  uint8_t step = sequencerEditStep & 0xF;
+  SequencerStep &seqStep = sequencerSteps[step];
+
+  if (seqStep.mode == SEQ_MODE_MELODY && seqStep.melodyCount < MAX_MELODY_NOTES) {
+    uint8_t idx = seqStep.melodyCount;
+    seqStep.melodyNotes[idx]     = MELODY_NOTE_REST;
+    seqStep.melodyVelocities[idx]= 0;
+    seqStep.melodyDurations[idx] = DURATION_PRESETS[selectedDurationIdx]; // Duración de la pausa
+    seqStep.melodyCount++;
   }
 }
 
@@ -349,14 +481,14 @@ uint8_t sequencerArpToneFromStep(uint8_t arpStep, uint8_t toneCount, ArpMode mod
 }
 
 bool isSequencerScopedControl(uint8_t page, uint8_t param) {
-  if (page == ADSR_PARAM_PAGE) return true;
+  if (page == PAGE_ADSR) return true;
   if (sequencerState == SEQ_STATE_OFF) return true;
 
-  if (page == 6) {
+  if (page == PAGE_ARP) {
     return (param >= 1 && param <= 4) || param == 6 || param == 7;
   }
 
-  if (page == 4) {
+  if (page == PAGE_CHORD) {
     return param >= 2;
   }
 
@@ -364,7 +496,7 @@ bool isSequencerScopedControl(uint8_t page, uint8_t param) {
 }
 
 void syncSequencerScopedValues(uint8_t step) {
-  step &= stepsForSeq;
+  step &= 0xF;
   SequencerStep &seqStep = sequencerSteps[step];
 
   synthValue[4][2] = (float)seqStep.chordInversion;
