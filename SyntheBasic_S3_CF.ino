@@ -141,11 +141,11 @@ bool page1UsingDefaults = false;
 bool page3UsingDefaults = false;
 bool applyingPageDefaultsToggle = false;
 
-
-enum ADSR : uint8_t {DELAY, ATTACK, ATTACK_LEV, DECAY, SUSTAIN, RELEASE, TOTAL_ADSR};
-const int ADSR_DEFAULTS[N_OSC][TOTAL_ADSR] = {{0,10,100,200,70,500},{0,10,100,200,70,500}};
-int ADSRedited[N_OSC][TOTAL_ADSR] = {{0,10,100,200,70,500},{0,10,100,200,70,500}};
-int ADSRvalues[N_OSC][TOTAL_ADSR] = {{0,10,100,200,70,500},{0,10,100,200,70,500}};
+                    // antiguo{DELAY, ATTACK, ATTACK_LEV, DECAY, SUSTAIN, RELEASE,
+enum ADSR : uint8_t {ATTACK, DECAY, SUSTAIN, RELEASE, DELAY, ATTACK_LEV,  TOTAL_ADSR};
+const int ADSR_DEFAULTS[N_OSC][TOTAL_ADSR] = {{10,200,70,500,0,100},{10,200,70,500,0,100}};
+int ADSRedited[N_OSC][TOTAL_ADSR] = {{10,200,70,500,0,100},{10,200,70,500,0,100}};
+int ADSRvalues[N_OSC][TOTAL_ADSR] = {{10,200,70,500,0,100},{10,200,70,500,0,100}};
 int ADSRmixValues[2] = {50, 1};
 bool adsrUsingDefaults[N_OSC] = {false, false};
 
@@ -157,10 +157,11 @@ struct ADSRparam {
 };
 const ADSRparam ADSRpage[PARAMS_PER_PAGE] = {
       //Name, min,    max, encoder increment, type
-    {"DELAY",  0, 2000, INT},      {"ATTACK",  1, 5000, INT},
-    {"ATT LVL",  0, 100, INT},     {"DECAY",  1, 5000, INT},
-    {"SUSTAIN",  0, 100, INT},     {"RELEASE",  1, 8000, INT},
-    {"OSC MIX",  0, 100, INT},     {"DETUNE",  0, 100, INT}
+    {"ATTACK",  1, 5000, INT},  {"DECAY",  1, 5000, INT},
+    {"SUSTAIN",  0, 100, INT},  {"RELEASE",  1, 8000, INT},
+    {"DELAY",  0, 2000, INT},   {"ATT LVL",  0, 100, INT},
+    {"OSC MIX",  0, 100, INT},  {"DETUNE",  0, 100, INT},
+           
 };
 
 struct SyntParam {
