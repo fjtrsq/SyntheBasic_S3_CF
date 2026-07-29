@@ -16,6 +16,7 @@
 #include "soc/soc_caps.h"
 #include "sdkconfig.h"
 #include "Catalogo_Formulas.h"
+#include "avdweb_Switch.h"
 
 #if SOC_USB_OTG_SUPPORTED && (!defined(ARDUINO_USB_MODE) || !ARDUINO_USB_MODE) && CONFIG_TINYUSB_MIDI_ENABLED
 #include "USB.h"
@@ -29,6 +30,7 @@ USBMIDI usbMidi("SyntheBasic-S3");
 
 #define LAB_TEXT &Orbitron_Medium_12
 #define NUM_TEXT &modern_lcd_78pt7b
+#define FILE_TEXT &FreeMonoBold9pt7b
 TFT_eSPI tft = TFT_eSPI();
 
 // --- Bloque DAC I2S (ESP32-S3) ---
@@ -58,10 +60,14 @@ const uint8_t PIN_SCL = 2;
 // --- Bloque controles locales (encoder + botones) ---
 const uint8_t PIN_ENC_A = 6;
 const uint8_t PIN_ENC_B = 7;
-const uint8_t PIN_ENC_BOT = 15;
+const uint8_t PIN_EBOT = 15;
 const uint8_t PIN_TACTIL = 16;
 const uint8_t PIN_AM = 8;
 const uint8_t PIN_AZ = 18;
+Switch botEnc = Switch(PIN_EBOT, INPUT, LOW);
+Switch botAm = Switch(PIN_AM);
+Switch botAz = Switch(PIN_AZ);
+Switch botTctl = Switch(PIN_TACTIL, INPUT, HIGH);
 Encoder_FJ encoder = Encoder_FJ(PIN_ENC_A, PIN_ENC_B);
 
 const int8_t encTable[] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
@@ -74,14 +80,6 @@ volatile bool updateEnc = false;
 volatile bool updateBtn = false;
 
 int8_t enc = 0;
-bool botEnc_ant = 0, botEnc = 0, botEnc_estable = 0;
-bool botBlue_ant = 0, botBlue = 0, botBlue_estable = 0;
-bool botAz_ant = 0, botAz = 0, botAz_estable = 0;
-bool botAm_ant = 0, botAm = 0, botAm_estable = 0;
-
-const unsigned long debounceDelay = 50; // ms
-unsigned long lastDebounceTime = 0;
-unsigned long lastBlueDebounceTime = 0;
 
 #define TABLE_SIZE_DEFAULT 2048
 
@@ -100,9 +98,9 @@ volatile uint32_t audioScopeSerial = 0;
 
 const uint8_t N_OSC = 2;
 const uint8_t ICON_W = 60;
-const uint8_t ICON_H = 25;
+const uint8_t ICON_H = 20;
 uint8_t cacheGraficaOndas[WAVE_COUNT][ICON_W];
-TFT_eSprite menuSprite = TFT_eSprite(&tft);
+TFT_eSprite iconSprite = TFT_eSprite(&tft);
 
 unsigned long waveEncoderMoveTime = 0;
 bool pendingWaveUpdate = false;
@@ -126,7 +124,8 @@ bool waitingForData2 = false;
 enum Type : uint8_t {INT = 0, ONOFF, NAME, CHARSEL, FFILE, NULO};
 enum Page : uint8_t {PAGE_CONF = 0, PAGE_LFO, PAGE_MORPH, PAGE_CHORUS, PAGE_CHORD, PAGE_SEQ, PAGE_ARP, PAGE_FILE, PAGE_ADSR}; 
 
-const uint8_t SOUND_PARAM_PAGES = 8;// incluida PAGE_FILE
+const uint8_t MAIN_PARAM_PAGES = 8;// incluida PAGE_FILE
+const uint8_t SAVED_PARAM_PAGES = 7;
 const uint8_t PARAM_PAGES = 9;
 const uint8_t PARAMS_PER_PAGE = 8;
 const uint8_t PN_LEN = 10; //Preset name len
@@ -172,7 +171,7 @@ struct SyntParam {
   const Type type;
 };
 
-SyntParam parametroPages[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {
+SyntParam parametroPages[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
       //Name,    min,  max,  encoder increment,   type
   {
     {"CURVE", 10,  1, 30, INT},       {"BPM", 120, 60, 200, INT},
@@ -201,14 +200,14 @@ SyntParam parametroPages[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {
   {
     {"CHORD", 0, 0, 1, ONOFF},        {"TYPE", 0, 0, 7, NAME},
     {"INV", 0, 0, 2, INT},            {"OCT", 0, -1, 1, INT},
-    {"VOL%", 100, 30, 120, INT},      {"SPRD", 0, 0, 100, INT},
+    {"VOLM", 100, 30, 120, INT},      {"SPRD", 0, 0, 100, INT},
     {"STRM", 0, 0, 100, INT},         {"DENS", 4, 2, 8, INT},
   },
   {
     {"SEQ", 0, 0, 2, NAME},           {"STEP", 1, 1 , 16, INT},
-    {"MODE", 0, 0, 2, NAME},          {"ROOT", 60, 24, 96, INT},
-    {"TYPE", 9, 0, 10, NAME},         {"BARS", 1, 1, 8, INT},
-    {"VEL%", 100, 20, 120, INT},      {"LENGTH", 1, 0, 9, NAME},
+    {"MODE", 2, 0, 2, NAME},          {"ROOT", 60, 24, 96, INT},
+    {"TYPE", 8, 0, 10, NAME},         {"BARS", 1, 1, 8, INT},
+    {"VEL%", 100, 0, 100, INT},       {"LENGTH", 3, 0, 9, NAME},
   },
   {
     {"ARP", 0, 0, 1, ONOFF},          {"RATE", 60, 10, 200, INT},
@@ -217,10 +216,10 @@ SyntParam parametroPages[SOUND_PARAM_PAGES][PARAMS_PER_PAGE] = {
     {"SWING", 0, 0, 45, INT},         {"MASK", 255, 1, 255, INT},
   },
   {
-    {"FILE", 0, 0, 0,  INT},        {"LOAD", 0, 0, 1,  FFILE},
-    {"SAVE", 0, 0, 1,  FFILE},      {"DEL", 0, 0, 10,  FFILE},
-    {"CLEAR", 0, 0, 10,  FFILE},    {"WRITE", 0, 0, 1,  FFILE},
-    {"POS", 0, 0, PN_LEN-1,  INT},  {"CHAR", 1, 0, 38,  CHARSEL}
+    {"FILE", 0, 0, 0,  INT},          {"LOAD", 0, 0, 1,  FFILE},
+    {"SAVE", 0, 0, 1,  FFILE},        {"DEL", 0, 0, 10,  FFILE},
+    {"CLEAR", 0, 0, 10,  FFILE},      {"WRITE", 0, -1, 1,  FFILE},
+    {"POS", 0, 0, PN_LEN-1,  INT},    {"CHAR", 1, 0, 38,  CHARSEL}
   }
 };
 
@@ -259,14 +258,14 @@ const uint8_t TABLE_SIZE_COUNT = sizeof(TABLE_SIZE_VALUES) / sizeof(TABLE_SIZE_V
 bool changed = false;
 const float DURATION_PRESETS[] = {
   0.125f, // 1/32 (Fusa)
-  0.25f,  // 1/16 (Semicorchea - valor por defecto)
-  0.375f, // Semicorchea.
+  0.25f,  // 1/16 (Semicorchea)
+  0.375f, // Semicorchea con puntillo
   0.5f,   // 1/8  (Corchea)
-  0.75f,  // Corchea.
+  0.75f,  // Corchea con puntillo
   1.0f,   // 1/4  (Negra)
-  1.5f,   // Negra.
+  1.5f,   // Negra con puntillo
   2.0f,   // 1/2  (Blanca)
-  3.0f,   // Blanca.
+  3.0f,   // Blanca con puntillo
   4.0f,   // 1/1  (Redonda)
 
 };
@@ -465,7 +464,7 @@ struct SequencerStep {
 };
 SequencerStep* sequencerSteps = nullptr;
 
-const SequencerStep SEQUENCER_DEFAULT_STEP = {SEQ_MODE_CHORD, 60, CHORD_REST, 0, {0}, 0, 0, 1.0f, 0.0f, 0, 4, 6.0f, ARP_UP, 1, 0.65f, 0.0f, 0xFF, 1, 100};
+const SequencerStep SEQUENCER_DEFAULT_STEP = {SEQ_MODE_MELODY,60,CHORD_PLAYED,0,{0},0,0,1.0f,0.0f,0,4,6.0f,ARP_UP,1,0.65f,0.0f,0xFF,1,100,{0},{0},{0},1,0};
 
 uint16_t sequencerBpm = 120;
 uint32_t sequencerNextStepMs = 0;
@@ -484,6 +483,7 @@ uint8_t sequencerUiStepShown = 0xFF;
 uint8_t sequencerUiBarShown = 0xFF;
 SeqTransitionMode sequencerTransitionMode = SEQ_TRANS_LEGATO;
 bool sequencerHasLayeredChord = false; // Indica si hay un acorde de fondo sonando
+float sequencerMainVelocity = 1.0f;
 
 uint8_t  sequencerMelodyIndex = 0;
 uint32_t sequencerMelodyNextMs = 0;
@@ -492,16 +492,16 @@ uint8_t  sequencerActiveMelodyNote = 0;
 bool     sequencerMelodyNoteOn = false;
 uint8_t lastMelodyEditStep = 255;
 const uint8_t MELODY_NOTE_REST = 255;
-uint8_t selectedDurationIdx = 1; //selector de duracion de nota
+uint8_t selectedDurationIdx = 3; //selector de duracion de nota
 
 char presetEditName[PN_LEN + 1] = "INIT";
-const char PRESET_CHARS[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
-char presetStatus[24] = "";
-uint32_t presetStatusUntil = 0;
+const char PRESET_CHARS[] = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ";
+
 int8_t presetActionParam = -1;
 char presetActionLabel[8] = "";
-uint32_t presetActionUntil = 0;
-uint8_t pendingParam = 0;
+uint32_t presetActionTime = 0;
+bool flagTime = false;
+
 const uint8_t MAX_PRESET_FILES = 100;
 char presetFileNames[MAX_PRESET_FILES][PN_LEN + 1] = {{0}};
 uint8_t presetFileCount = 0;
@@ -510,12 +510,12 @@ bool suppressUiRefresh = false;
 
 struct StoredPreset {
   char name[PN_LEN + 1];
-  float values[SOUND_PARAM_PAGES][PARAMS_PER_PAGE];
+  float values[MAIN_PARAM_PAGES][PARAMS_PER_PAGE];
   int oscAdsr[N_OSC][TOTAL_ADSR];
   int oscMix[2];
 };
 
-
+void endFeedbackPreset(uint32_t time = 2000);
 
 void IRAM_ATTR isrEnc() { updateEnc = true; }
 void IRAM_ATTR isrBtn() { updateBtn = true; }
@@ -1464,17 +1464,17 @@ void setup() {
 
   pinMode(PIN_INT_ENC, INPUT_PULLUP);
   pinMode(PIN_INT_BTN, INPUT_PULLUP);
-  pinMode(PIN_ENC_BOT, INPUT);
-  pinMode(PIN_TACTIL, INPUT);
-  pinMode(PIN_AM, INPUT_PULLUP);
-  pinMode(PIN_AZ, INPUT_PULLUP);
+  //pinMode(PIN_EBOT, INPUT);
+  //pinMode(PIN_TACTIL, INPUT);
+  //pinMode(PIN_AM, INPUT_PULLUP);
+  //pinMode(PIN_AZ, INPUT_PULLUP);
 
 
   // 2. TFT
   tft.begin();
   tft.setRotation(3);
   tft.fillScreen(TFT_BLACK);
-  menuSprite.createSprite(ICON_W, ICON_H);
+  iconSprite.createSprite(ICON_W, ICON_H);
   tft.setFreeFont(LAB_TEXT);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.drawString("SyntheBasic", 100, 120);
@@ -1525,8 +1525,10 @@ void loop() {
   if (updateEnc) processEncoders();
   if (updateBtn) processButtons();
   processControl();
-  if(flagTime) {
-    if(presetActionUntil - millis() > 0)timeOutFile();
-  }  
-  refreshAudioScope();
+  processBotControl();
+  
+
+  if(flagTime) endFeedbackPreset();
+  
+  if (currentPage < PAGE_CHORD) refreshAudioScope();
 }

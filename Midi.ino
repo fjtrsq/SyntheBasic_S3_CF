@@ -49,6 +49,7 @@ void noteOff(uint8_t note) {
   }
 }
 
+
 void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
   uint8_t command = status & 0xF0;
 
@@ -59,24 +60,46 @@ void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
         midiKeysDown[data1] = true;
         if (midiKeysPressedCount < 127) midiKeysPressedCount++;
       }
+      
+      // 1. Guardamos la nota en el paso (tu código original)
       captureSequencerStepFromMidi(data2);
 
-      if (arpEnabled) {
-        // Si HOLD esta activo y esta es la primera tecla nueva
-        ArpHold holdMode = effectiveArpHold();
-        if (holdMode != HOLD_OFF && holdMode != HOLD_STACK && midiKeysPressedCount == 1) {
-          arpClearNoteSoft();   // limpia acorde anterior pero no el index
+      // --- 2. NUEVO: LÓGICA DE PREESCUCHA ---
+      if (sequencerState == SEQ_STATE_REC) {
+        SequencerStep &step = sequencerSteps[sequencerEditStep & 0xF];
+
+        if (step.mode == SEQ_MODE_CHORD) {
+          playSequencerChordNotes(sequencerEditStep & 0xF, data2);
+        } 
+        else if (step.mode == SEQ_MODE_ARP) {
+          // Si es la primera tecla que pulsamos, forzamos que el arpegio comience inmediatamente
+          if (midiKeysPressedCount == 1) {
+            sequencerArpIndex = 0;
+            sequencerArpNextMs = millis();
+          }
+        } 
+        else {
+          noteOn(data1, data2); // Modo MELODÍA o notas simples
         }
-        arpAddNote(data1, data2);
-        if (arpSamplesToNextStep == 0) arpSamplesToNextStep = 1;
       }
+      // --- FIN PREESCUCHA (Comienza tu lógica global original) ---
       else {
-        if (latchEnabled && midiKeysPressedCount == 1) {
-          releaseAllVoices();
-          resetLfoAttackRequested = true;
+        if (arpEnabled) {
+          ArpHold holdMode = effectiveArpHold();
+          if (holdMode != HOLD_OFF && holdMode != HOLD_STACK && midiKeysPressedCount == 1) {
+            arpClearNoteSoft();
+          }
+          arpAddNote(data1, data2);
+          if (arpSamplesToNextStep == 0) arpSamplesToNextStep = 1;
         }
-        if (chordAssistantEnabled) playChordFromRoot(data1, data2);
-        else noteOn(data1, data2);
+        else {
+          if (latchEnabled && midiKeysPressedCount == 1) {
+            releaseAllVoices();
+            resetLfoAttackRequested = true;
+          }
+          if (chordAssistantEnabled) playChordFromRoot(data1, data2);
+          else noteOn(data1, data2);
+        }
       }
     }
     else {
@@ -89,15 +112,36 @@ void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
       if (midiKeysPressedCount > 0) midiKeysPressedCount--;
     }
 
-    if (arpEnabled) {
-      if (effectiveArpHold() == HOLD_OFF) arpRemoveNote(data1);
+    // --- NUEVO: APAGAR NOTAS DE PREESCUCHA ---
+    if (sequencerState == SEQ_STATE_REC) {
+      SequencerStep &step = sequencerSteps[sequencerEditStep & 0xF];
+      
+      if (step.mode == SEQ_MODE_CHORD) {
+        stopChordFromRoot(step.root);
+        stopChordFromRoot(data1);
+      } 
+      else if (step.mode == SEQ_MODE_ARP) {
+        // Al soltar todas las teclas, detenemos la nota activa del arpegio
+        if (midiKeysPressedCount == 0 && sequencerArpNoteOn) {
+          noteOff(sequencerActiveArpNote);
+          sequencerArpNoteOn = false;
+        }
+      } 
+      else {
+        noteOff(data1);
+      }
     }
-    else if (!latchEnabled) {
-      if (chordAssistantEnabled) stopChordFromRoot(data1);
-      else noteOff(data1);
+    // --- FIN APAGAR NOTAS PREESCUCHA ---
+    else {
+      if (arpEnabled) {
+        if (effectiveArpHold() == HOLD_OFF) arpRemoveNote(data1);
+      }
+      else if (!latchEnabled) {
+        if (chordAssistantEnabled) stopChordFromRoot(data1);
+        else noteOff(data1);
+      }
     }
   }
-  
 }
 
 void handleMidiUsb() {
@@ -112,7 +156,7 @@ void handleMidiUsb() {
   #endif
 }
 
-void handleMIDI() {
+/*void handleMIDI() {
 
   while (Serial2.available()) {
 
@@ -194,6 +238,32 @@ void handleMIDI() {
             else noteOff(midiData1);
           }
         }
+      }
+    }
+  }
+
+  handleMidiUsb();
+}*/
+void handleMIDI() {
+  while (Serial2.available()) {
+    uint8_t midibyte = Serial2.read();
+
+    if (midibyte & 0x80) {
+      // Es status byte
+      midiStatus = midibyte;
+      waitingForData2 = false;
+    }
+    else {
+      if (!waitingForData2) {
+        midiData1 = midibyte;
+        waitingForData2 = true;
+      }
+      else {
+        uint8_t midiData2 = midibyte;
+        waitingForData2 = false;
+
+        // En lugar de duplicar toda la lógica aquí, llamamos a processMidiMessage
+        processMidiMessage(midiStatus, midiData1, midiData2);
       }
     }
   }

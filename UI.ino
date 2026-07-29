@@ -75,17 +75,15 @@ void processEncoders() {
               
               if (diff < 80) {
                   int32_t factor = 80 - diff; 
-                  int32_t factorCuadratico = factor * factor; 
-                  // Escalado al ~10% del rango del encoder específico 'i'
-                  int32_t saltoDinamico = (factorCuadratico * rango) / 64000;
+                 
+                  int32_t saltoDinamico = (factor * factor * rango) >> 16;
                   acc += saltoDinamico;
               }
 
               // Límite de seguridad individual (15% máximo de su propio rango)
               int32_t accMaximo = (rango * 15) / 100; 
-              if (acc > accMaximo) acc = accMaximo;
+              acc = _min(acc, accMaximo);
             }
-            if (acc < 1) acc = 1;
             
             int direccion = (subSteps[i] > 0) ? -1 : 1;
 
@@ -149,7 +147,7 @@ void toggleADSRDefaults(uint8_t osc) {
 
 void refreshValue(Page page, uint8_t param , int dirAcc){
   uint16_t color = 0;
-  if(page < SOUND_PARAM_PAGES) {
+  if(page < MAIN_PARAM_PAGES) {
     parametroPages[page][param].value = constrain(parametroPages[page][param].value + dirAcc,
                 parametroPages[page][param].min,parametroPages[page][param].max);
     const int value = parametroPages[page][param].value;
@@ -205,25 +203,31 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
 
       //pagina 3 GLIDE/MORPH currentPage = 2
       case 16: glideTime = value * 0.001f; break;
-      case 17: morphEnabled = value >= 0.5f ? 1.0f : 0.0f;
-               color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
-               drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, color);
-               color = morphEnabled ? TFT_CYAN : TFT_DARKGREY;
-               drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, color);
-               Serial.printf("OSC A WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[0]], WAVE_NAMES[oscWaveCacheEndType[0]]);
-               Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_NAMES[oscWaveCacheEndType[1]]);
+      case 17: morphEnabled = value * 1.0f;
+               if (!suppressUiRefresh) {
+                  color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
+                  drawWaveAudioIcon(oscWaveformEnd[0], 255, 175, color);
+                  color = morphEnabled ? TFT_CYAN : TFT_DARKGREY;
+                  drawWaveAudioIcon(oscWaveformEnd[1], 255, 217, color);
+                  Serial.printf("OSC A WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[0]], WAVE_NAMES[oscWaveCacheEndType[0]]);
+                  Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_NAMES[oscWaveCacheEndType[1]]);
+               }
                break;
       case 18: oscWaveformEnd[0] = (Waveform)value;
-               color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
-               drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, color); 
-               leds.setColor(currentPage, RED);
-               leds.show(); 
+               if (!suppressUiRefresh) {
+                 color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
+                 drawWaveAudioIcon(oscWaveformEnd[0], 255, 175, color); 
+                 leds.setColor(currentPage, RED);
+                 leds.show(); 
+               }
                break;
       case 19: oscWaveformEnd[1] = (Waveform)value;
-               color = morphEnabled ? TFT_CYAN : TFT_DARKGREY;
-               drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, color); 
-               leds.setColor(currentPage, RED);
-               leds.show();
+               if (!suppressUiRefresh) {
+                 color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
+                 drawWaveAudioIcon(oscWaveformEnd[0], 255, 175, color); 
+                 leds.setColor(currentPage, RED);
+                 leds.show(); 
+               }
                break;
       case 20: morphBase = value * 0.01f; break;
       case 21: morphMode = (MorphMode)value; break; 
@@ -295,16 +299,25 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
         if (!suppressUiRefresh && page == PAGE_SEQ) {
           for (uint8_t j = 2; j < 8; j++) drawValue(j);
         }
+        drawMainVisualization();
+        drawExtraValue();
         break;
-      case 42: sequencerSteps[sequencerEditStep].mode = (SequencerMode)value;break;  
-      case 43: sequencerSteps[sequencerEditStep].root = (uint8_t)value; break;
+      case 42: sequencerSteps[sequencerEditStep].mode = (SequencerMode)value;
+              if(value == SEQ_MODE_MELODY) drawMelody(sequencerEditStep);
+              break;  
+      case 43: sequencerSteps[sequencerEditStep].root = value; break;
       case 44: sequencerSteps[sequencerEditStep].chord = (ChordType)value;
                 if (sequencerSteps[sequencerEditStep].chord != CHORD_PLAYED) sequencerSteps[sequencerEditStep].playedCount = 0;
                 break;
-      case 45: sequencerSteps[sequencerEditStep].bars = (uint8_t)value; break;
-      case 46: sequencerSteps[sequencerEditStep].velocity = (uint8_t)value; break;
-      case 47: selectedDurationIdx = DURATION_PRESETS[value];
-                sequencerSteps[sequencerEditStep].melodyDurations[MAX_MELODY_NOTES] = selectedDurationIdx;
+      case 45: sequencerSteps[sequencerEditStep].bars = value; break;
+      case 46: if(sequencerState != SEQ_STATE_ON) sequencerSteps[sequencerEditStep].velocity = map(value,0,100,0,127); 
+              else sequencerMainVelocity = constrain(value, 0, 100) * 0.01f;
+              break;
+      case 47: selectedDurationIdx = value;
+                if (sequencerSteps[sequencerEditStep].melodyCount > 0) {
+                  uint8_t lastNoteIdx = sequencerSteps[sequencerEditStep].melodyCount - 1;
+                  sequencerSteps[sequencerEditStep].melodyDurations[lastNoteIdx] = DURATION_PRESETS[selectedDurationIdx];
+                }
                 break;
 
       //pagina 7 ARPPEGIATOR currentPage = 6
@@ -339,13 +352,13 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 break;
   
       //Pagina 8 FILE currentPage 7
-      case 56: presetSelectFileByIndex(parametroPages[PAGE_FILE][param].value); break;
+      case 56: presetSelectFileByIndex(value); break;
       case 57:
-        if (parametroPages[PAGE_FILE][param].value == 1) {
+        if (value == 1) {
           finalizePresetName();
           bool ok = presetLoadByName(presetEditName);
           Serial.printf("Load preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
-          setPresetActionFeedback(1, ok ? "OK" : "FAIL");
+          setFeedbackPreset(1, ok ? "OK" : "FAIL");
           parametroPages[PAGE_FILE][param].value = 0;
         }
         break;
@@ -355,51 +368,72 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
           finalizePresetName();
           bool ok = presetSaveByName(presetEditName);
           Serial.printf("Save preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
-          setPresetActionFeedback(2, ok ? "OK" : "FAIL");
+          setFeedbackPreset(2, ok ? "OK" : "FAIL");
           parametroPages[PAGE_FILE][param].value = 0;
           refreshPresetFileList(true);
         }
         break;
       case 59:
         if (parametroPages[PAGE_FILE][param].value == 1){
-          setPresetActionFeedback(3, "¿?");
-          leds.setColor(currentPage, RED);
-          leds.show();
+          setFeedbackPreset(3, "¿?");
+          
         }
-        if (parametroPages[PAGE_FILE][param].value == 10) {
+        if (parametroPages[PAGE_FILE][param].value > 4) {
           finalizePresetName();
           bool ok = presetDeleteByName(presetEditName);
           Serial.printf("Delete preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
-          setPresetActionFeedback(3, ok ? "OK" : "FAIL");
+          setFeedbackPreset(3, ok ? "OK" : "FAIL");
           parametroPages[PAGE_FILE][param].value = 0;
           refreshPresetFileList(false);
-          leds.setColor(currentPage, GREEN);
-          leds.show();
+          
         }
         break;
       case 60:
         if (parametroPages[PAGE_FILE][param].value == 1){
-          setPresetActionFeedback(3, "¿?");
-          leds.setColor(currentPage, RED);
-          leds.show();
+          setFeedbackPreset(4, "¿?");
+          
         }
-        if (parametroPages[PAGE_FILE][param].value == 10) {
+        if (parametroPages[PAGE_FILE][param].value > 4) {
           memset(presetEditName, ' ', PN_LEN);
           presetEditName[PN_LEN] = '\0';
-          setPresetActionFeedback(4, "CLEAR");
+          parametroPages[PAGE_FILE][6].value = 0;
+          setFeedbackPreset(4, "CLEAR");
           parametroPages[PAGE_FILE][param].value = 0;
-          leds.setColor(currentPage, GREEN);
-          leds.show();
+          drawExtraValue();
         }
         break;
       case 61:
         if (parametroPages[PAGE_FILE][param].value == 1) {
           presetInsertSelectedChar(true);
-          setPresetActionFeedback(5, "WRITE");
+          setFeedbackPreset(5, "WRITE");
           parametroPages[PAGE_FILE][param].value = 0;
         }
+        else if (parametroPages[PAGE_FILE][param].value == -1) {
+          int pos = parametroPages[PAGE_FILE][6].value;
+
+          // 1. Desplazamos todos los caracteres que están a la derecha del cursor
+          // una posición hacia la izquierda para borrar la letra actual.
+          for (int i = pos; i < PN_LEN - 1; i++) {
+            presetEditName[i] = presetEditName[i + 1];
+          }
+          // 2. Al desplazar todo, el último carácter queda duplicado, así que 
+          // insertamos un espacio al final para mantener limpia la cadena.
+          presetEditName[PN_LEN - 1] = ' ';
+          // 3. Retrocedemos el cursor una posición (si no estamos ya en el límite)
+          // para que, si sigues girando a la izquierda, actúe como un borrador continuo.
+          if (pos > 0) {
+            pos--;
+            parametroPages[PAGE_FILE][6].value = pos;
+            drawValue(6);
+          }
+          
+          // 4. Feedback visual
+          setFeedbackPreset(5, "DEL");
+          parametroPages[PAGE_FILE][param].value = 0;
+          drawExtraValue();
+        }
         break;
-      case 62: break;
+      case 62: drawExtraValue(); break;
       case 63: break;
     }
 
@@ -438,11 +472,12 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
 
   if (!suppressUiRefresh) {
     drawValue(param);
-    if (page == PAGE_FILE || page == PAGE_ADSR) {
+    if (page == PAGE_ADSR || page == PAGE_FILE) {
       drawMainVisualization();
+
     }
 
-    Serial.printf("Page %d Param %d = %.2f\n", page + 1, param, getParamValue(page, param));
+    Serial.printf("Page %d Param %d = %d\n", page + 1, param, getParamValue(page, param));
   }
 }
 
@@ -499,11 +534,10 @@ void setPage(Page page){
         applyPageDefaultsToggle(page, PAGE3_DEFAULTS, page3EditedValues, page3UsingDefaults);
       break;
       case PAGE_SEQ:
-        seqCopyStep(sequencerEditStep);
+        seqCopyNextStep(sequencerEditStep);
       break;
       case PAGE_FILE:
         presetInsertSelectedChar(true);
-        //setPresetStatus("CHAR OK", 800);
       break;
       case PAGE_ADSR:
         syncActiveWaveCache(0, oscWaveform[0], WAVE_START);
@@ -540,10 +574,18 @@ void processButtons() {
   lastBtnState = current;
 }
 
+void processBotControl(){
+  botAm.poll();  botonAmarillo();
+  botAz.poll();  botonAzul();
+  botEnc.poll(); botonEncoder();
+  botTctl.poll();botonTactil();
+
+}
+
 void processControl(){
   enc = encoder.read();
   if (enc){ //Encoder
-    if(currentPage < SOUND_PARAM_PAGES){
+    if(currentPage < MAIN_PARAM_PAGES){
       switch(currentPage){
         case PAGE_CONF:
           
@@ -555,7 +597,7 @@ void processControl(){
           oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT);
           if(oscWaveform[oscSelect] == WAVE_COUNT && enc == 1) oscWaveform[oscSelect] = WAVE_SAW;
           if(oscWaveform[oscSelect] == WAVE_SAW && enc == -1) oscWaveform[oscSelect] = WAVE_NOISE;
-          drawWaveAudioIcon(oscWaveform[oscSelect], 185, oscSelect ? 214 : 159, oscSelect ? TFT_CYAN : TFT_YELLOW);
+          drawWaveAudioIcon(oscWaveform[oscSelect], 185, oscSelect ? 217 : 175, oscSelect ? TFT_CYAN : TFT_YELLOW);
           leds.setColor(currentPage, RED);
           leds.show();
         break;
@@ -577,90 +619,70 @@ void processControl(){
       oscWaveform[oscSelect] = (Waveform)constrain((int)oscWaveform[oscSelect] + enc, 0, (int)WAVE_COUNT);
       if(oscWaveform[oscSelect] == WAVE_COUNT && enc == 1) oscWaveform[oscSelect] = WAVE_SAW;
       if(oscWaveform[oscSelect] == WAVE_SAW && enc == -1) oscWaveform[oscSelect] = WAVE_NOISE;
-      drawWaveAudioIcon(oscWaveform[oscSelect], 255, oscSelect ? 214 : 159, oscSelect ? TFT_CYAN : TFT_YELLOW); 
+      drawWaveAudioIcon(oscWaveform[oscSelect], 255, oscSelect ? 217 : 175, oscSelect ? TFT_CYAN : TFT_YELLOW); 
       drawExtraValue();
       leds.setColor(currentPage, RED);
       leds.show();
     }
   }
+}
 
-  botEnc = !digitalRead(PIN_ENC_BOT); //select ADSR control
-  if (botEnc != botEnc_ant) {
-    lastDebounceTime = millis();
-  }
-  if ((millis() - lastDebounceTime) > debounceDelay) { 
-    if (botEnc && !botEnc_estable) {
-      setPage(PAGE_ADSR);
+void botonTactil(){
+  if (botTctl.switched()){
+    if(botTctl.on()){
+      latchEnabled = true;
     }
-    botEnc_estable = botEnc;
+    else {
+      latchEnabled = false;
+      if (arpEnabled) arpReleaseLatchedNotes();
+      else if (midiKeysPressedCount == 0) releaseAllVoices();
+    }
+    if (currentPage == PAGE_ARP) drawValue(5);
+    Serial.printf("Latch -> %s\n", latchEnabled ? "ON" : "OFF");
   }
-  botEnc_ant = botEnc;
-  
-  botAz = !digitalRead(PIN_AZ); //selected osc 1
-  if (botAz != botAz_ant) {
-    lastDebounceTime = millis();
-  }
+}
 
-  if ((millis() - lastDebounceTime) > debounceDelay) {
-    if (botAz && !botAz_estable) {
+void botonEncoder(){
+  if(botEnc.singleClick()){
+    setPage(PAGE_ADSR);
+  }
+    
+}
+
+void botonAmarillo(){
+  if(botAm.singleClick()){
+    if(currentPage == PAGE_SEQ){
+      uint8_t step = sequencerEditStep & 0x07;
+      sequencerSteps[step].layerChord = !sequencerSteps[step].layerChord; 
+      drawExtraValue();
+     
+    }
+    else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
+      if (oscSelect != 0) {
+        oscSelect = 0;
+        drawMainVisualization();
+      }
+      else toggleADSRDefaults(0);
+    }
+
+  }
+}
+
+void botonAzul(){
+  if(botAz.singleClick()){
+    if(currentPage == PAGE_SEQ){
+      uint8_t step = sequencerEditStep & 0x07;
+      seqDeleteStep(step);
+    }
+      
+    else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
       if(oscSelect != 1){  
         oscSelect = 1;
         drawMainVisualization();
       }
       else toggleADSRDefaults(1);
     }
-    
-    botAz_estable = botAz;
   }
-  botAz_ant = botAz;
-
-  botAm = !digitalRead(PIN_AM); //Selected osc 0
-  if (botAm != botAm_ant) {
-    lastDebounceTime = millis();
-  }
-
-  if ((millis() - lastDebounceTime) > debounceDelay) {
-    if (botAm && !botAm_estable) {
-      if(currentPage == PAGE_SEQ){
-        uint8_t step = sequencerEditStep & 0x07;
-        sequencerSteps[step].layerChord = !sequencerSteps[step].layerChord; 
-        drawExtraValue();
-      }
-      else{
-        if (oscSelect != 0) {
-          oscSelect = 0;
-          drawMainVisualization();
-        }
-        else toggleADSRDefaults(0);
-      }
-    }
-    
-    botAm_estable = botAm;
-  }
-  botAm_ant = botAm;
-
-  botBlue = digitalRead(PIN_TACTIL); //latch
-  if (botBlue != botBlue_ant) {
-    lastBlueDebounceTime = millis();
-  }
-  if ((millis() - lastBlueDebounceTime) > debounceDelay) {
-    if (botBlue != botBlue_estable) {
-      botBlue_estable = botBlue;
-      latchEnabled = botBlue_estable;
-      if (!latchEnabled) {
-        if (arpEnabled) arpReleaseLatchedNotes();
-        else if (midiKeysPressedCount == 0) releaseAllVoices();
-      }
-      if (currentPage == PAGE_ARP) drawValue(5);
-      Serial.printf("Latch -> %s\n", latchEnabled ? "ON" : "OFF");
-    }
-  }
-  botBlue_ant = botBlue;
-}
-
-void timeOutFile(){
-  flagTime = false;
-  drawValue(pendingParam);
 }
 
 void drawValue(uint8_t i){
@@ -708,18 +730,15 @@ void drawValue(uint8_t i){
       break;
 
     case FFILE:
-      if ((i > 0 || i < 6) {
+      if (flagTime) {
         textValue = presetActionLabel;
-        pendingParam = i;
+        
       }
       else {
         textValue = "GO";
+        
       }
-      if(textValue == "GO" && i == 3){
-        parametroPages[PAGE_FILE][i].value = 0;
-        leds.setColor(currentPage, GREEN);
-        leds.show();
-      }
+      
       break;
 
   }
@@ -739,13 +758,13 @@ void uint8ToBinaryStr(uint8_t num, char *buffer) {
 }
 
 void drawExtraValue(){
-  char buf[20] = "";
+  char buf[25] = "";
   const int x = 10;
   const int y = 130;
   tft.setFreeFont(NUM_TEXT);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_WHITE);
-  tft.fillRect(x, y, 170, 20, TFT_BLACK);
+  tft.fillRect(x, y, (currentPage == PAGE_SEQ) ? 230 : 180, 20, TFT_BLACK);
   switch(currentPage){
     case PAGE_CONF: 
       snprintf(buf, sizeof(buf), "%s", changed ? "RESET HW" : "");
@@ -762,10 +781,17 @@ void drawExtraValue(){
     case PAGE_CHORD:
       snprintf(buf, sizeof(buf), "%s I%d", CHORD_TYPE_NAMES[(int)chordType], chordInversion);
       break;
-    case PAGE_SEQ:
-      snprintf(buf, sizeof(buf), "%s S%d B%d %s", SEQ_TRANSITION_NAMES[(int)sequencerTransitionMode], sequencerPlayStep + 1, 
-      sequencerPlayBar, sequencerSteps[sequencerEditStep].layerChord ? "+CHORD" : "");
+    case PAGE_SEQ: {
+      uint8_t currentStepIdx;
+      if (sequencerState == SEQ_STATE_ON) {
+        currentStepIdx = sequencerPlayStep & 0xF;
+      } else {
+        currentStepIdx = sequencerEditStep & 0xF;
+      }
+      snprintf(buf, sizeof(buf), "%s S%d B%d %s", SEQ_TRANSITION_NAMES[(int)sequencerTransitionMode], currentStepIdx + 1, 
+      sequencerPlayBar, sequencerSteps[currentStepIdx].layerChord ? "+CHD" : "");
       break;
+    }
     case PAGE_ARP: 
       uint8ToBinaryStr(arpPatternMask, buf);
       break;
@@ -773,12 +799,14 @@ void drawExtraValue(){
       char nameBuf[PN_LEN + 1];
       strncpy(nameBuf, presetEditName, PN_LEN);
       nameBuf[PN_LEN] = '\0';
-      int pos = constrain(parametroPages[PAGE_FILE][6].value, 0, PN_LEN - 1);
+      int pos = parametroPages[PAGE_FILE][6].value;
       char prefix[PN_LEN + 1];
       strncpy(prefix, nameBuf, pos);
       prefix[pos] = '\0';
+
       char selected[2] = {nameBuf[pos], '\0'};
-      if (selected[0] == '\0') selected[0] = ' ';
+      if (selected[0] == '\0' || selected[0] == ' ') selected[0] = '_';
+      
       const char* suffix = (nameBuf[pos] != '\0') ? &nameBuf[pos + 1] : "";
 
       tft.setCursor(x, y + 18);
@@ -797,6 +825,7 @@ void drawExtraValue(){
   if (currentPage != PAGE_FILE) {
     tft.drawString(buf, x, y);
   }
+  Serial.println(buf);
 }
 
 void drawLinesADSR(uint8_t osc){
@@ -871,7 +900,6 @@ void drawLinesADSR(uint8_t osc){
   tft.drawLine(xD, ySus, xS, ySus, color);   
   tft.drawLine(xS, ySus, xR, y0, color);     
 }
-
 
 void drawADSR(){
   char buf[9];
@@ -954,7 +982,7 @@ void drawAudioWaveform(){
 void drawPresetFileList(){
   const int x = 5;
   const int y = 159;
-  const int w = 235;
+  const int w = 250;
   const int h = 80;
   const uint8_t cols = 2;
   const uint8_t rows = 5;
@@ -964,7 +992,7 @@ void drawPresetFileList(){
 
   tft.fillRect(x, y, w, h, TFT_BLACK);
   tft.drawRect(x-1, y-1, w+2, h+2, TFT_DARKGREY);
-  tft.setFreeFont(LAB_TEXT);
+  tft.setFreeFont(FILE_TEXT);
   tft.setTextDatum(TL_DATUM);
 
   if (presetFileCount == 0) {
@@ -987,8 +1015,7 @@ void drawPresetFileList(){
     bool isSelected = fileIndex == selected;
 
     if (isSelected) {
-      
-      tft.setTextColor(TFT_YELLOW);
+      tft.setTextColor(TFT_GREEN);
     }
     else {
       tft.setTextColor(TFT_WHITE);
@@ -1001,40 +1028,196 @@ void drawPresetFileList(){
   }
 }
 
-void  drawMainVisualization(){
-  if (currentPage == PAGE_ADSR) {
-    for(byte i=0;i<8;i++) drawValue(i);
-    drawADSR();
-    drawWaveAudioIcon(oscWaveform[0], 255, 159, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
-    drawWaveAudioIcon(oscWaveform[1], 255, 214, oscSelect ? TFT_CYAN : TFT_DARKGREY);
-    drawExtraValue();
-    SimpleColor color = oscSelect ? CYAN : YELLOW;
-    leds.setColor(9, color);
-    leds.show();
-  }
-  else if (currentPage == PAGE_FILE) {
-    drawPresetFileList();
+void drawMelody(uint8_t step){
+  // 1. Definir el área de dibujo en drawMainVisualization
+  const int x = 5;
+  const int y = 159;
+  const int w = 310; // Ancho total de la visualización
+  const int h = 80;
+  
+  // Limpiar el área y dibujar el marco
+  tft.fillRect(x, y, w, h, TFT_BLACK);
+  tft.drawRect(x - 1, y - 1, w + 2, h + 2, TFT_DARKGREY);
+  
+  SequencerStep &seqStep = sequencerSteps[step];
+  
+  // Si no hay notas, mostramos un mensaje
+  if (seqStep.melodyCount == 0) {
+     tft.setFreeFont(LAB_TEXT);
+     tft.setTextDatum(MC_DATUM);
+     tft.setTextColor(TFT_DARKGREY);
+     tft.drawString("EMPTY STEP", x + w / 2, y + h / 2);
+     return;
   }
 
-  else if (currentPage == PAGE_MORPH){  //Morphing
-    drawAudioWaveform();
-    drawWaveAudioIcon(oscWaveform[0], 185, 159, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
-    drawWaveAudioIcon(oscWaveform[1], 185, 214, oscSelect ? TFT_CYAN : TFT_DARKGREY);
-    drawWaveAudioIcon(oscWaveformEnd[0], 255, 159, morphEnabled ? TFT_YELLOW : TFT_DARKGREY);
-    drawWaveAudioIcon(oscWaveformEnd[1], 255, 214, morphEnabled ? TFT_CYAN : TFT_DARKGREY);
-    drawExtraValue();
-    SimpleColor color = oscSelect ? CYAN : YELLOW;
-    leds.setColor(9, color);
-    leds.show();
+  // 2. Escanear notas para calcular el rango dinámico del eje Y
+  uint8_t minNote = 127;
+  uint8_t maxNote = 0;
+  
+  for(uint8_t i = 0; i < seqStep.melodyCount; i++) {
+    uint8_t n = seqStep.melodyNotes[i];
+    if (seqStep.melodyVelocities[i] > 0 && n != 255) {
+      if (n < minNote) minNote = n;
+      if (n > maxNote) maxNote = n;
+    }
   }
-  else {
-    drawAudioWaveform();
-    drawWaveAudioIcon(oscWaveform[0], 255, 159, TFT_YELLOW);
-    drawWaveAudioIcon(oscWaveform[1], 255, 214, TFT_CYAN);
-    drawExtraValue();
-    SimpleColor color = oscSelect ? CYAN : YELLOW;
-    leds.setColor(9, color);
-    leds.show();
+  
+  // Si todas las notas son iguales, damos un margen artificial para centrarla
+  if (minNote == maxNote) {
+    maxNote = minNote + 12; // Octava superior
+    minNote = (minNote > 12) ? minNote - 12 : 0; // Octava inferior
+  }
+
+  // 3. Variables para el cálculo del compás (4/4 = 4.0 beats)
+  float totalBeats = 4.0f; 
+  float currentBeat = 0.0f;
+  
+  // 4. Iterar y dibujar cada nota
+  for(uint8_t i = 0; i < seqStep.melodyCount; i++) {
+    float dur = seqStep.melodyDurations[i];
+    
+    // Si ya completamos el compás, dejamos de dibujar
+    if (currentBeat >= totalBeats) break; 
+    
+    // Si la nota excede el final del compás, la recortamos visualmente
+    float drawDur = dur;
+    if (currentBeat + drawDur > totalBeats) {
+      drawDur = totalBeats - currentBeat;
+    }
+    
+    // Calcular posiciones X y anchos
+    int noteX = x + (int)((currentBeat / totalBeats) * w);
+    // CALCULO PRECISO: Punto de inicio (x1) y punto final (x2) en píxeles
+    int x1 = x + (int)roundf((currentBeat / totalBeats) * (float)w);
+    int x2 = x + (int)roundf(((currentBeat + drawDur) / totalBeats) * (float)w);
+    
+    int noteW = x2 - x1;
+    
+    // Dejar 1px de separación entre notas adyacentes si hay espacio suficiente
+    int drawW = (noteW > 3) ? noteW - 1 : noteW;
+    if (drawW < 1) drawW = 1; // Garantizar al menos 1px de ancho visible
+    
+    uint8_t note = seqStep.melodyNotes[i];
+    bool isRest = (seqStep.melodyVelocities[i] == 0 || note == 255);
+    
+    // Calcular altura y posición Y
+    int rectH = 5;
+    
+    if (isRest) {
+      // Dibujar silencios como una simple línea horizontal oscura en el centro
+      int restY = y + (h / 2);
+      tft.drawFastHLine(noteX, restY, drawW, TFT_DARKGREY);
+    } else {
+      // Calcular la posición Y interpolando entre la nota mínima y máxima
+      int yTop = y + 5; 
+      int yBottom = y + h - rectH - 5; 
+      
+      float rangoNotas = (float)(maxNote - minNote);
+      float offsetNota = (float)(note - minNote);
+      
+      // Se resta de yBottom para invertir el eje: notas agudas (alto número MIDI) van arriba
+      int rectY = yBottom - (int)((offsetNota / rangoNotas) * (yBottom - yTop));
+      
+      // Dibujar la nota
+      tft.fillRect(noteX, rectY, drawW, rectH, TFT_GREEN);
+    }
+    
+    // Avanzar el cursor de tiempo
+    currentBeat += dur;
+  }
+  
+  // 5. Dibujar líneas verticales grises para marcar los 4 tiempos (beats)
+  for (int b = 1; b < 4; b++)  tft.drawFastVLine(x + (b * w / 4), y, h, TFT_DARKGREY);
+
+}
+
+void drawArp(uint8_t step){
+  tft.setFreeFont(NUM_TEXT);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(TFT_GREEN);
+  char buf[20] = "";
+  snprintf(buf, sizeof(buf), "ARP: %s",  ARP_MODE_NAMES[sequencerSteps[step].arpMode]);
+  tft.drawString(buf, 20, 190);
+}
+
+void drawChord(uint8_t step){
+
+}
+
+void drawSqrBots(const char* am, const char* az){
+  int x1 = 241;
+  int x2 = 281;
+  int w = 35;
+  int h = 24;
+  int y = 128;
+
+  tft.fillRect(x1,y,(w * 2) + 5, h, TFT_BLACK);
+  tft.drawRect(x1,y,w,h, TFT_YELLOW);
+  tft.drawRect(x2,y,w,h, TFT_CYAN);
+
+  tft.setFreeFont(LAB_TEXT);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(TFT_YELLOW);
+  tft.drawString(am, x1 + 18, y + 3);
+  tft.setTextColor(TFT_CYAN);
+  tft.drawString(az, x2 + 18, y + 3);
+
+} 
+
+void  drawMainVisualization(){
+  SimpleColor color = oscSelect ? CYAN : YELLOW;
+  switch (currentPage){
+    case PAGE_ADSR:
+      for(byte i=0;i<8;i++) drawValue(i);
+      drawADSR();
+      drawWaveAudioIcon(oscWaveform[0], 255, 175, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
+      drawWaveAudioIcon(oscWaveform[1], 255, 217, oscSelect ? TFT_CYAN : TFT_DARKGREY);
+      drawExtraValue();
+      drawSqrBots("DEF","DEF");
+      leds.setColor(9, color);
+      leds.show();
+      break;
+
+    case PAGE_FILE:
+      drawPresetFileList();
+      break;
+    
+    case PAGE_SEQ: {
+      drawSqrBots("CHD","DEL");
+      leds.setColor(9, OFF);
+      leds.show();
+      uint8_t currentStepIdx;
+      if (sequencerState == SEQ_STATE_ON) {
+        currentStepIdx = sequencerPlayStep & 0xF;
+      } else {
+        currentStepIdx = sequencerEditStep & 0xF;
+      }
+      if(sequencerSteps[currentStepIdx].mode == SEQ_MODE_MELODY) drawMelody(currentStepIdx);
+      else if(sequencerSteps[currentStepIdx].mode == SEQ_MODE_ARP) drawArp(currentStepIdx);
+      else drawChord(currentStepIdx);
+      break;
+    }
+
+    case PAGE_MORPH:
+      //drawAudioWaveform();
+      drawWaveAudioIcon(oscWaveform[0], 185, 175, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
+      drawWaveAudioIcon(oscWaveform[1], 185, 217, oscSelect ? TFT_CYAN : TFT_DARKGREY);
+      drawWaveAudioIcon(oscWaveformEnd[0], 255, 175, morphEnabled ? TFT_YELLOW : TFT_DARKGREY);
+      drawWaveAudioIcon(oscWaveformEnd[1], 255, 217, morphEnabled ? TFT_CYAN : TFT_DARKGREY);
+      drawExtraValue();
+      drawSqrBots("A","B");
+      leds.setColor(9, color);
+      leds.show();
+      break;
+
+    default:
+      //drawAudioWaveform();
+      drawWaveAudioIcon(oscWaveform[0], 255, 175, TFT_YELLOW);
+      drawWaveAudioIcon(oscWaveform[1], 255, 217, TFT_CYAN);
+      drawExtraValue();
+      leds.setColor(9, color);
+      leds.show();
+      break;
   }
 }
 
@@ -1042,7 +1225,6 @@ void refreshAudioScope(){
   static uint32_t lastDrawMs = 0;
   static uint32_t lastSerial = 0;
 
-  if (currentPage == PAGE_ADSR || currentPage == PAGE_FILE) return;
   if (millis() - lastDrawMs < 80) return;
   if (audioScopeSerial == lastSerial) return;
 
@@ -1068,7 +1250,7 @@ void drawWaveAudioIcon(uint8_t idWave, int posX, int posY, uint16_t color) {
   if (idWave < 0 || idWave >= WAVE_COUNT) return;
   
   // A. Limpiamos el lienzo del único Sprite antes de pintar la nueva onda
-  menuSprite.fillSprite(TFT_BLACK);
+  iconSprite.fillSprite(TFT_BLACK);
   
   int centroY = ICON_H / 2;
   int ultimoX = 0;
@@ -1077,21 +1259,21 @@ void drawWaveAudioIcon(uint8_t idWave, int posX, int posY, uint16_t color) {
   // B. Dibujamos la geometría dentro del Sprite leyendo la caché ultrarrápida
   for (int x = 1; x < ICON_W - 1; x++) {
     int yPixel = cacheGraficaOndas[idWave][x];
-    menuSprite.drawLine(ultimoX, ultimoY, x, yPixel, color);
+    iconSprite.drawLine(ultimoX, ultimoY, x, yPixel, color);
     ultimoX = x;
     ultimoY = yPixel;
   }
-  menuSprite.drawLine(ultimoX, ultimoY, ICON_W - 1, centroY, color);
+  iconSprite.drawLine(ultimoX, ultimoY, ICON_W - 1, centroY, color);
 
   // C. Estampamos el Sprite en la pantalla ST7789. 
   // El Sprite se libera inmediatamente para poder ser reutilizado.
-  menuSprite.pushSprite(posX, posY);
+  iconSprite.pushSprite(posX, posY);
   // texto
   tft.fillRect(posX,posY-18,60,17,TFT_BLACK);
   tft.setFreeFont(LAB_TEXT);
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(color);
-  tft.drawString(WAVE_NAMES[idWave], posX + 30, posY -19); 
+  tft.drawString(WAVE_NAMES[idWave], posX + 30, posY -18); 
 }
 
 void drawUI(){

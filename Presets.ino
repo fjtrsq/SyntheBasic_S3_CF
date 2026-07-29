@@ -30,7 +30,7 @@ bool presetSaveByName(const char* name) {
   strncpy(preset.name, name, PN_LEN);
   preset.name[PN_LEN] = '\0';
 
-  for (uint8_t page = 0; page < SOUND_PARAM_PAGES; page++) {
+  for (uint8_t page = 0; page < SAVED_PARAM_PAGES; page++) {
     for (uint8_t param = 0; param < PARAMS_PER_PAGE; param++) {
       preset.values[page][param] = parametroPages[page][param].value;
     }
@@ -65,7 +65,7 @@ bool presetLoadByName(const char* name) {
   presetEditName[PN_LEN] = '\0';
 
   suppressUiRefresh = true;
-  for (uint8_t page = 0; page < SOUND_PARAM_PAGES; page++) {
+  for (uint8_t page = 0; page < SAVED_PARAM_PAGES; page++) {
     for (uint8_t param = 0; param < PARAMS_PER_PAGE; param++) {
       parametroPages[page][param].value = preset.values[page][param];
       refreshValue((Page)page, param, 0);
@@ -126,6 +126,8 @@ void presetSelectFileByIndex(int index) {
   memset(presetEditName, ' ', PN_LEN);
   strncpy(presetEditName, presetFileNames[index], PN_LEN);
   presetEditName[PN_LEN] = '\0';
+  drawExtraValue();
+
 }
 
 void refreshPresetFileList(bool keepCurrentSelection) {
@@ -195,19 +197,43 @@ void refreshPresetFileList(bool keepCurrentSelection) {
 
   parametroPages[PAGE_FILE][0].value = selectedIndex;
   presetSelectFileByIndex(selectedIndex);
+  drawPresetFileList();
+}
+
+void endFeedbackPreset(uint32_t time){
+  if(millis() - presetActionTime > time){
+    flagTime = false;
+    parametroPages[PAGE_FILE][presetActionParam].value = 0;
+    drawValue(presetActionParam);
+    presetActionParam = -1;
+    memset(presetActionLabel, 0, sizeof(presetActionLabel));
+    presetActionTime = 0;
+    leds.setColor(currentPage, GREEN);
+    leds.show();
+  }
 }
 
 
-void setPresetActionFeedback(uint8_t param, const char* label, uint16_t ms = 2000) {
-  presetActionParam = (int8_t)param;
+void setFeedbackPreset(uint8_t param, const char* label) {
+  flagTime = true;
+  presetActionParam = param;
   strncpy(presetActionLabel, label, sizeof(presetActionLabel) - 1);
   presetActionLabel[sizeof(presetActionLabel) - 1] = '\0';
-  presetActionUntil = millis() + ms;
+  presetActionTime = millis();
+  leds.setColor(currentPage, RED);
+  leds.show();
 }
 
 void presetInsertSelectedChar(bool autoAdvance) {
-  int pos = constrain(parametroPages[PAGE_FILE][6].value, 0, PN_LEN - 1);
-  int charIdx = constrain(parametroPages[PAGE_FILE][7].value, 0, strlen(PRESET_CHARS) - 1);
+  int pos = parametroPages[PAGE_FILE][6].value;
+  int charIdx = parametroPages[PAGE_FILE][7].value;
+
+  for (int i = 0; i < pos; i++) {
+    if (presetEditName[i] == '\0') {
+      presetEditName[i] = '_'; // Aquí puedes poner '_' si prefieres el guion bajo
+    }
+  }
+
   presetEditName[pos] = PRESET_CHARS[charIdx];
 
   if (autoAdvance && pos < PN_LEN - 1) {
@@ -220,7 +246,7 @@ void presetInsertSelectedChar(bool autoAdvance) {
 
 void finalizePresetName() {
   int end = PN_LEN - 1;
-  while (end >= 0 && presetEditName[end] == ' ') {
+  while (end >= 0 && (presetEditName[end] == ' ' || presetEditName[end] == '_')) {
     end--;
   }
   presetEditName[end + 1] = '\0';
