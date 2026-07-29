@@ -28,7 +28,7 @@ USBMIDI usbMidi("SyntheBasic-S3");
 #endif
 
 
-#define LAB_TEXT &Orbitron_Medium_12
+#define LAB_TEXT &Orbitron_Medium_13
 #define NUM_TEXT &modern_lcd_78pt7b
 #define FILE_TEXT &FreeMonoBold9pt7b
 TFT_eSPI tft = TFT_eSPI();
