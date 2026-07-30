@@ -1,11 +1,11 @@
 const char* getParamName(Page page, uint8_t param) {
   if (page == PAGE_ADSR) return ADSRpage[param].name;
-  else return parametroPages[page][param].name;
+  else return pageParam[page][param].name;
 }
 
 Type getParamType(Page page, uint8_t param) {
   if (page == PAGE_ADSR) return ADSRpage[param].type;
-  else return parametroPages[page][param].type;
+  else return pageParam[page][param].type;
 }
 
 int getParamValue(Page page, uint8_t param) {
@@ -13,7 +13,7 @@ int getParamValue(Page page, uint8_t param) {
       if (param < TOTAL_ADSR) return ADSRvalues[oscSelect][param];
       return ADSRmixValues[param - TOTAL_ADSR];
   }
-  else return parametroPages[page][param].value;
+  else return pageParam[page][param].value;
 }
 
 const char* getNameValue (uint8_t param, int value){ // page * PARAMS_PER_PAGE + param
@@ -69,7 +69,7 @@ void processEncoders() {
             int32_t rango = 1;
             int32_t acc = 1;
             if (currentPage == PAGE_ADSR) rango = ADSRpage[i].max - ADSRpage[i].min; 
-            else rango = parametroPages[currentPage][i].max - parametroPages[currentPage][i].min;
+            else rango = pageParam[currentPage][i].max - pageParam[currentPage][i].min;
 
             if(rango > 15){
               
@@ -102,8 +102,8 @@ void applyPageDefaultsToggle(Page page, const int defaults[PARAMS_PER_PAGE], int
   applyingPageDefaultsToggle = true;
   if (!usingDefaults) {
     for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) {
-      edited[i] = parametroPages[page][i].value;
-      parametroPages[page][i].value = defaults[i];
+      edited[i] = pageParam[page][i].value;
+      pageParam[page][i].value = defaults[i];
       refreshValue(page, i, 0);
       if (currentPage == page) drawValue(i);
     }
@@ -112,7 +112,7 @@ void applyPageDefaultsToggle(Page page, const int defaults[PARAMS_PER_PAGE], int
   }
   else {
     for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) {
-      parametroPages[page][i].value = edited[i];
+      pageParam[page][i].value = edited[i];
       refreshValue(page, i, 0);
       if (currentPage == page) drawValue(i);
     }
@@ -148,11 +148,11 @@ void toggleADSRDefaults(uint8_t osc) {
 void refreshValue(Page page, uint8_t param , int dirAcc){
   uint16_t color = 0;
   if(page < MAIN_PARAM_PAGES) {
-    parametroPages[page][param].value = constrain(parametroPages[page][param].value + dirAcc,
-                parametroPages[page][param].min,parametroPages[page][param].max);
-    const int value = parametroPages[page][param].value;
-    uint8_t pageParam = page * PARAMS_PER_PAGE + param;
-    switch (pageParam) {
+    pageParam[page][param].value = constrain(pageParam[page][param].value + dirAcc,
+                pageParam[page][param].min,pageParam[page][param].max);
+    const int value = pageParam[page][param].value;
+    uint8_t parametroRaw = page * PARAMS_PER_PAGE + param;
+    switch (parametroRaw) {
       //pagina 1 CONFIG currentPage = 0
       case 0:  velocityExponent = value * 0.1f; break;
       case 1:  sequencerBpm = (uint16_t)value; break;
@@ -160,33 +160,51 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
         regeneratePulseTable(varPulse); 
         break;
       case 3:  masterGain = value * 0.01; break;
-      case 4:  break;
+      case 4:  {uint8_t targetVoices = value;
+                bool changed = targetVoices != numVoices;
+                bool saved = !changed;
+                if (changed) {
+                  saved = saveNumVoicesToNvs(targetVoices);
+                  Serial.printf("[NVS] Cambio Numero de Voces -> %u (%s)\n", targetVoices,
+                                saved ? "guardado, requiere reset HW" : "error NVS");
+                }
+                pageParam[0][4].value = saved ? targetVoices : numVoices;
+                if(changed && saved) bitSet(confFlagRed, parametroRaw);
+                else bitClear(confFlagRed, parametroRaw);
+                drawExtraValue();
+                break;
+              }
       case 5:  maxReleaseVoices = (uint8_t)value; break;
       case 6:  { int selectedIndex = value;
-                uint16_t selectedSize = TABLE_SIZE_VALUES[selectedIndex]; //tableSizeFromIndex(selectedIndex);
-                changed = selectedSize != tableSize;
+                uint16_t selectedSize = TABLE_SIZE_VALUES[selectedIndex];
+                bool changed = selectedSize != tableSize;
                 bool saved = !changed;
                 if (changed) {
                   saved = saveTableSizeToNvs(selectedSize);
-                  drawExtraValue();
-                  Serial.printf("[WAV] Cambio TABLE_SIZE -> %u (%s)\n",
+                  Serial.printf("[NVS] Cambio TABLE_SIZE -> %u (%s)\n",
                                 selectedSize,
                                 saved ? "guardado, requiere reset HW" : "error NVS");
                 }
-                parametroPages[0][6].value = saved ? selectedIndex : tableSizeToIndex(tableSize);
+                pageParam[0][6].value = saved ? selectedIndex : tableSizeToIndex(tableSize);
+                if(changed && saved) bitSet(confFlagRed, parametroRaw);
+                else bitClear(confFlagRed, parametroRaw);
+                drawExtraValue();
                 break;
               }
       case 7: { MemoryMode selectedMode = (value > 0.5f) ? MEMORY_INTERNAL : MEMORY_PSRAM;
-                changed = selectedMode != memoryMode;
+                bool changed = selectedMode != memoryMode;
+                bool saved = !changed;
                 if (changed) {
-                  bool saved = saveMemoryModeToNvs(selectedMode);
-                  drawExtraValue();
-                  Serial.printf("[MEM] Cambio modo memoria -> %s (%s)\n",
+                  saved = saveMemoryModeToNvs(selectedMode);
+                  
+                  Serial.printf("[NVS] Cambio modo memoria -> %s (%s)\n",
                                 selectedMode == MEMORY_INTERNAL ? "RAM interna primero" : "AUTO (PSRAM primero)",
                                 saved ? "guardado, requiere reset HW" : "error NVS");
-                  
                 }
-                parametroPages[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1.0f : 0.0f;
+                pageParam[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1 : 0;
+                if(changed && saved) bitSet(confFlagRed,parametroRaw);
+                else bitClear(confFlagRed, parametroRaw);
+                drawExtraValue();
                 break;
               } 
           
@@ -209,8 +227,8 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                   drawWaveAudioIcon(oscWaveformEnd[0], 255, 175, color);
                   color = morphEnabled ? TFT_CYAN : TFT_DARKGREY;
                   drawWaveAudioIcon(oscWaveformEnd[1], 255, 217, color);
-                  Serial.printf("OSC A WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[0]], WAVE_NAMES[oscWaveCacheEndType[0]]);
-                  Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_NAMES[oscWaveCacheEndType[1]]);
+                  Serial.printf("OSC A WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[0]], WAVE_LONG_NAMES[oscWaveCacheEndType[0]]);
+                  Serial.printf("OSC B WaveForm start %s end %s\n", WAVE_NAMES[oscWaveCacheType[1]], WAVE_LONG_NAMES[oscWaveCacheEndType[1]]);
                }
                break;
       case 18: oscWaveformEnd[0] = (Waveform)value;
@@ -223,8 +241,8 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                break;
       case 19: oscWaveformEnd[1] = (Waveform)value;
                if (!suppressUiRefresh) {
-                 color = morphEnabled ? TFT_YELLOW : TFT_DARKGREY;
-                 drawWaveAudioIcon(oscWaveformEnd[0], 255, 175, color); 
+                 color = morphEnabled ? TFT_CYAN : TFT_DARKGREY;
+                 drawWaveAudioIcon(oscWaveformEnd[1], 255, 217, color); 
                  leds.setColor(currentPage, RED);
                  leds.show(); 
                }
@@ -290,12 +308,19 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 41:
         sequencerEditStep = (uint8_t)value - 1;
         if (sequencerState != SEQ_STATE_OFF) syncSequencerScopedValues(sequencerEditStep);
-        parametroPages[5][2].value = sequencerSteps[sequencerEditStep].mode;
-        parametroPages[5][3].value = sequencerSteps[sequencerEditStep].root;
-        parametroPages[5][4].value = sequencerSteps[sequencerEditStep].chord;
-        parametroPages[5][5].value = sequencerSteps[sequencerEditStep].bars;
-        parametroPages[5][6].value = sequencerSteps[sequencerEditStep].velocity;
-        parametroPages[5][7].value = selectedDurationIdx;
+        pageParam[5][2].value = sequencerSteps[sequencerEditStep].mode;
+        if (sequencerSteps[sequencerEditStep].mode == SEQ_MODE_MELODY){
+          pageParam[5][3].value = sequencerSteps[sequencerEditStep].transpose;
+          redrawParam(3,{"TRANS", sequencerSteps[sequencerEditStep].transpose, -24, 24, INT});
+        }
+        else {
+          pageParam[5][3].value = sequencerSteps[sequencerEditStep].root;
+          redrawParam(3,{"ROOT", sequencerSteps[sequencerEditStep].root, 24, 96, INT});
+        }
+        pageParam[5][4].value = sequencerSteps[sequencerEditStep].chord;
+        pageParam[5][5].value = sequencerSteps[sequencerEditStep].bars;
+        pageParam[5][6].value = sequencerSteps[sequencerEditStep].velocity;
+        pageParam[5][7].value = selectedDurationIdx;
         if (!suppressUiRefresh && page == PAGE_SEQ) {
           for (uint8_t j = 2; j < 8; j++) drawValue(j);
         }
@@ -305,7 +330,12 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 42: sequencerSteps[sequencerEditStep].mode = (SequencerMode)value;
               if(value == SEQ_MODE_MELODY) drawMelody(sequencerEditStep);
               break;  
-      case 43: sequencerSteps[sequencerEditStep].root = value; break;
+      case 43: if (sequencerSteps[sequencerEditStep].mode == SEQ_MODE_MELODY){
+          pageParam[5][3].value = sequencerSteps[sequencerEditStep].transpose;
+        }
+        else {
+          pageParam[5][3].value = sequencerSteps[sequencerEditStep].root;
+        }
       case 44: sequencerSteps[sequencerEditStep].chord = (ChordType)value;
                 if (sequencerSteps[sequencerEditStep].chord != CHORD_PLAYED) sequencerSteps[sequencerEditStep].playedCount = 0;
                 break;
@@ -341,7 +371,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 53: if (sequencerState != SEQ_STATE_OFF) break;
                 else{
                   arpHold = (ArpHold)value;
-                  parametroPages[6][5].value = arpHold; break;
+                  pageParam[6][5].value = arpHold; break;
                 }
       case 54: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpSwing = value * 0.01;
                 else arpSwing = value * 0.01;
@@ -359,57 +389,57 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
           bool ok = presetLoadByName(presetEditName);
           Serial.printf("Load preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
           setFeedbackPreset(1, ok ? "OK" : "FAIL");
-          parametroPages[PAGE_FILE][param].value = 0;
+          pageParam[PAGE_FILE][param].value = 0;
         }
         break;
 
       case 58:
-        if (parametroPages[PAGE_FILE][param].value == 1) {
+        if (pageParam[PAGE_FILE][param].value == 1) {
           finalizePresetName();
           bool ok = presetSaveByName(presetEditName);
           Serial.printf("Save preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
           setFeedbackPreset(2, ok ? "OK" : "FAIL");
-          parametroPages[PAGE_FILE][param].value = 0;
+          pageParam[PAGE_FILE][param].value = 0;
           refreshPresetFileList(true);
         }
         break;
       case 59:
-        if (parametroPages[PAGE_FILE][param].value == 1){
+        if (pageParam[PAGE_FILE][param].value == 1){
           setFeedbackPreset(3, "¿?");
           
         }
-        if (parametroPages[PAGE_FILE][param].value > 4) {
+        if (pageParam[PAGE_FILE][param].value > 4) {
           finalizePresetName();
           bool ok = presetDeleteByName(presetEditName);
           Serial.printf("Delete preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
           setFeedbackPreset(3, ok ? "OK" : "FAIL");
-          parametroPages[PAGE_FILE][param].value = 0;
+          pageParam[PAGE_FILE][param].value = 0;
           refreshPresetFileList(false);
           
         }
         break;
       case 60:
-        if (parametroPages[PAGE_FILE][param].value == 1){
+        if (pageParam[PAGE_FILE][param].value == 1){
           setFeedbackPreset(4, "¿?");
           
         }
-        if (parametroPages[PAGE_FILE][param].value > 4) {
+        if (pageParam[PAGE_FILE][param].value > 4) {
           memset(presetEditName, ' ', PN_LEN);
           presetEditName[PN_LEN] = '\0';
-          parametroPages[PAGE_FILE][6].value = 0;
+          pageParam[PAGE_FILE][6].value = 0;
           setFeedbackPreset(4, "CLEAR");
-          parametroPages[PAGE_FILE][param].value = 0;
+          pageParam[PAGE_FILE][param].value = 0;
           drawExtraValue();
         }
         break;
       case 61:
-        if (parametroPages[PAGE_FILE][param].value == 1) {
+        if (pageParam[PAGE_FILE][param].value == 1) {
           presetInsertSelectedChar(true);
           setFeedbackPreset(5, "WRITE");
-          parametroPages[PAGE_FILE][param].value = 0;
+          pageParam[PAGE_FILE][param].value = 0;
         }
-        else if (parametroPages[PAGE_FILE][param].value == -1) {
-          int pos = parametroPages[PAGE_FILE][6].value;
+        else if (pageParam[PAGE_FILE][param].value == -1) {
+          int pos = pageParam[PAGE_FILE][6].value;
 
           // 1. Desplazamos todos los caracteres que están a la derecha del cursor
           // una posición hacia la izquierda para borrar la letra actual.
@@ -423,13 +453,13 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
           // para que, si sigues girando a la izquierda, actúe como un borrador continuo.
           if (pos > 0) {
             pos--;
-            parametroPages[PAGE_FILE][6].value = pos;
+            pageParam[PAGE_FILE][6].value = pos;
             drawValue(6);
           }
           
           // 4. Feedback visual
           setFeedbackPreset(5, "DEL");
-          parametroPages[PAGE_FILE][param].value = 0;
+          pageParam[PAGE_FILE][param].value = 0;
           drawExtraValue();
         }
         break;
@@ -457,13 +487,13 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
 
   if (!applyingPageDefaultsToggle) {
     if (page == PAGE_LFO && page1UsingDefaults) {
-      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page1EditedValues[i] = parametroPages[1][i].value;
+      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page1EditedValues[i] = pageParam[1][i].value;
       page1UsingDefaults = false;
       if (!suppressUiRefresh && currentPage == PAGE_LFO) drawExtraValue();
     }
     
     else if (page == PAGE_CHORUS && page3UsingDefaults) {
-      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page3EditedValues[i] = parametroPages[3][i].value;
+      for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page3EditedValues[i] = pageParam[3][i].value;
       page3UsingDefaults = false;
       if (!suppressUiRefresh && currentPage == PAGE_CHORUS) drawExtraValue();
     }
@@ -745,6 +775,7 @@ void drawValue(uint8_t i){
   tft.setFreeFont(NUM_TEXT);
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(TFT_WHITE);
+  if(currentPage == PAGE_CONF && bitRead(confFlagRed, i)) tft.setTextColor(TFT_RED);
   tft.fillRect((i&3)*80, 28 + ((i>>2)*60), 80, 22, TFT_BLACK);
   tft.drawString(textValue, pos + ((i&3)*80), 30 + ((i>>2)*60));
 }
@@ -767,7 +798,7 @@ void drawExtraValue(){
   tft.fillRect(x, y, (currentPage == PAGE_SEQ) ? 230 : 180, 20, TFT_BLACK);
   switch(currentPage){
     case PAGE_CONF: 
-      snprintf(buf, sizeof(buf), "%s", changed ? "RESET HW" : "");
+      snprintf(buf, sizeof(buf), "%s", confFlagRed ? "RESET HW" : "");
       break;
     case PAGE_LFO: 
       snprintf(buf, sizeof(buf), "%s", page1UsingDefaults ? "DEFAULT" : "EDIT"); 
@@ -799,7 +830,7 @@ void drawExtraValue(){
       char nameBuf[PN_LEN + 1];
       strncpy(nameBuf, presetEditName, PN_LEN);
       nameBuf[PN_LEN] = '\0';
-      int pos = parametroPages[PAGE_FILE][6].value;
+      int pos = pageParam[PAGE_FILE][6].value;
       char prefix[PN_LEN + 1];
       strncpy(prefix, nameBuf, pos);
       prefix[pos] = '\0';
@@ -1001,7 +1032,7 @@ void drawPresetFileList(){
     return;
   }
 
-  uint8_t selected = (uint8_t)constrain(parametroPages[PAGE_FILE][0].value, 0, presetFileCount - 1);
+  uint8_t selected = (uint8_t)constrain(pageParam[PAGE_FILE][0].value, 0, presetFileCount - 1);
   uint8_t pageStart = (selected / pageSize) * pageSize;
 
   for (uint8_t slot = 0; slot < pageSize; slot++) {
@@ -1158,13 +1189,14 @@ void drawSqrBots(const char* am, const char* az){
   tft.setFreeFont(LAB_TEXT);
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(TFT_YELLOW);
-  tft.drawString(am, x1 + 18, y + 3);
+  tft.drawString(am, x1 + 18, y + 5);
   tft.setTextColor(TFT_CYAN);
-  tft.drawString(az, x2 + 18, y + 3);
+  tft.drawString(az, x2 + 18, y + 5);
 
 } 
 
 void  drawMainVisualization(){
+  leds.setColor(9, OFF);
   SimpleColor color = oscSelect ? CYAN : YELLOW;
   switch (currentPage){
     case PAGE_ADSR:
@@ -1175,7 +1207,6 @@ void  drawMainVisualization(){
       drawExtraValue();
       drawSqrBots("DEF","DEF");
       leds.setColor(9, color);
-      leds.show();
       break;
 
     case PAGE_FILE:
@@ -1183,9 +1214,7 @@ void  drawMainVisualization(){
       break;
     
     case PAGE_SEQ: {
-      drawSqrBots("CHD","DEL");
-      leds.setColor(9, OFF);
-      leds.show();
+      drawSqrBots("CHD","DEL");    
       uint8_t currentStepIdx;
       if (sequencerState == SEQ_STATE_ON) {
         currentStepIdx = sequencerPlayStep & 0xF;
@@ -1207,7 +1236,6 @@ void  drawMainVisualization(){
       drawExtraValue();
       drawSqrBots("A","B");
       leds.setColor(9, color);
-      leds.show();
       break;
 
     default:
@@ -1215,10 +1243,9 @@ void  drawMainVisualization(){
       drawWaveAudioIcon(oscWaveform[0], 255, 175, TFT_YELLOW);
       drawWaveAudioIcon(oscWaveform[1], 255, 217, TFT_CYAN);
       drawExtraValue();
-      leds.setColor(9, color);
-      leds.show();
       break;
   }
+  leds.show();
 }
 
 void refreshAudioScope(){
@@ -1231,6 +1258,10 @@ void refreshAudioScope(){
   lastDrawMs = millis();
   lastSerial = audioScopeSerial;
   drawAudioWaveform();
+}
+
+void redrawParam(uint8_t p, const Param& param){
+  pageParam[currentPage][p] = param;
 }
 
 void drawLabels(){

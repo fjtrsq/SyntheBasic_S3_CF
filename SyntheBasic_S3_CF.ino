@@ -5,8 +5,7 @@
 #include "TFT_Setup.h"
 #include <TFT_eSPI.h>
 #include <LittleFS.h>
-#include "labelText.h"
-#include "numText.h"
+#include "fontsText.h"
 #include <driver/i2s.h>
 #include <esp_heap_caps.h>
 #include <esp_psram.h>
@@ -30,7 +29,7 @@ USBMIDI usbMidi("SyntheBasic-S3");
 
 #define LAB_TEXT &Orbitron_Medium_13
 #define NUM_TEXT &modern_lcd_78pt7b
-#define FILE_TEXT &FreeMonoBold9pt7b
+#define FILE_TEXT &Roboto_Medium_12
 TFT_eSPI tft = TFT_eSPI();
 
 // --- Bloque DAC I2S (ESP32-S3) ---
@@ -85,7 +84,8 @@ int8_t enc = 0;
 
 #define SAMPLE_RATE 44100
 #define BUFFER_AUDIO 256
-#define NUM_VOICES 8
+#define MAX_VOICES 16
+#define NUM_VOICES_DEFAULT 8
 
 // Declaración del "candado" para sincronizar los núcleos
 portMUX_TYPE audioMux = portMUX_INITIALIZER_UNLOCKED;
@@ -164,20 +164,20 @@ const ADSRparam ADSRpage[PARAMS_PER_PAGE] = {
            
 };
 
-struct SyntParam {
+struct Param {
   const char* name;
   int value;
   int min;
   int max;
-  const Type type;
+  Type type;
 };
 
-SyntParam parametroPages[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
+Param pageParam[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
       //Name,    min,  max,  encoder increment,   type
   {
     {"CURVE", 10,  1, 30, INT},       {"BPM", 120, 60, 200, INT},
     {"%PULSE", 20, 10, 90, INT},      {"M GAIN", 150, 10, 300, INT},
-    {"      ", 0, 0, 1, NULO},        {"N RLEAS", 3, 1, 6, INT},
+    {"VOICES", 8, 4, 16, INT},        {"N RLEAS", 3, 1, 6, INT},
     {"WT SIZE", 3, 0, 3, NAME},       {"RAM/PSR", 0,  0, 1, ONOFF},
   },
   {
@@ -189,7 +189,7 @@ SyntParam parametroPages[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
   {
     {"GLIDE", 0, 0, 5000, INT},       {"MORPH", 0, 0, 1, ONOFF},
     {"END A", 8, 0, 49, NAME},        {"END B", 12, 0, 49, NAME},
-    {"MIX", 50, 0, 100, INT},         {"MODE", 0, 0, 3, NAME},
+    {"MIX", 50, 0, 100, INT},         {"MODE", 0, 0, 5, NAME},
     {"VEL", 50, 0, 100, INT},         {"DEPTH", 50, 0, 100, INT},
   },
   { 
@@ -224,7 +224,7 @@ SyntParam parametroPages[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
   }
 };
 
-
+byte confFlagRed = 0;
 
 const char* WAVE_LONG_NAMES[] = {"SAW", "SINE", "TRIANGLE", "SQUARE", "PULSE", "SUPER SAW", "ORGAN", "CRUSH", "DRIVE WARM",
       "SINE EXP", "SAW EXP", "RECTIFIED", "CHEBYSHEV", "FM CLASIC", "FM METAL", "FM INDUST", "FM CRISTAL", "FM FEEDBACK", "VOCAL AA",
@@ -233,30 +233,28 @@ const char* WAVE_LONG_NAMES[] = {"SAW", "SINE", "TRIANGLE", "SQUARE", "PULSE", "
       "WARP", "SINE PWM", "TB HYBRID", "SUB HARM", "BEAT", "STEP_8BIT", "HARD SYNC", "POLYNOMIAL", "PSEUDO NOISE",
       "NOISE",
 };
-const char* WAVE_NAMES[] = {"Saw", "Sine", "Tri", "Sqr", "Pulse", "SpSaw", "Organ", "Crush",
-                            "Warm", "SinEx", "SawEx", "FlRct", "Chebs", "FMcla", "FMmet", 
-                            "FMind", "FMcrp", "FMfdB", "Voc A", "Voc O", "Holow", "Harmo", 
-                            "Pinch", "SyPul", "Chirp", "Grit" ,"TrInv", "Frctl", "Wiers",
-                            "Pluck", "Clart", "BelTb", "Cello", "Prbol", "Trapz", "TrSft",
-                            "SawFl", "CrosM", "CosEx", "WarpD", "SnPwm", "SwSqr", "SbHar",
-                            "Beat", "Stp8b", "SawHd", "Polyn", "NoisP", "Noise"};
+const char* WAVE_NAMES[] = {"SAW", "SINE", "TRI", "SQR", "PULSE", "SPSAW", "ORGAN", "CRUSH", "WARM", "SINEX", "SAWEX", "FLRCT",
+                           "CHEBS", "FMCLA", "FMMET", "FMIND", "FMCRP", "FMFDB", "VOC A", "VOC O", "HOLOW", "HARMO", "PINCH",
+                           "SYPUL", "CHIRP", "GRIT", "TRINV", "FRCTL", "WIERS", "PLUCK", "CLART", "BELTB", "CELLO", "PRBOL", 
+                           "TRAPZ", "TRSFT", "SAWFL", "CROSM", "COSEX", "WARPD", "SNPWM", "SWSQR", "SBHAR", "BEAT", "STP8B", 
+                           "SAWHD", "POLYN", "NOISP", "NOISE"};
 const char* OSC_NAME[] = {"A", "B"};
-const char* LFO_SHAPE_NAMES[] = {"Sine", "Tri", "Saw", "Sqr","Pulse", "S&H", "Chaos"};
-const char* LFO_TARGET_NAMES[] = {"Pitch", "Vol", "CutOf", "OsMix", "FXMod"};
-const char* FX_MODE_NAMES[] = {"Chrus", "Flger"};
-const char* MORPH_MODE_NAMES[] = {"Hard", "Equal", "LFO", "ENV"};
-const char* ARP_MODE_NAMES[] = {"Up", "Down", "UpDwn", "Rnd", "Pat", "DwnUp", "InOut", "OutIn"};
-const char* ARP_HOLD_NAMES[] = {"Off", "Order", "Play", "Stack", };
-const char* CHORD_TYPE_NAMES[] = {"Maj", "Min", "Sus2", "Sus4", "Pwr", "Maj7", "Min7", "7", "Playd", "Rest", "End"};
-const char* SEQ_MODE_NAMES[] = {"Chord", "Arp", "Meldy"};
-const char* SEQ_STATE_NAMES[] = {"Off", "Rec", "On"};
-const char* SEQ_DIR_NAMES[] = {"Fwd", "Bwd", "Rnd"};
-const char* SEQ_TRANSITION_NAMES[] = {"Trg", "Leg"};
+const char* LFO_SHAPE_NAMES[] = {"SINE", "TRI", "SAW", "SQR","PULSE", "S&H", "CHAOS"};
+const char* LFO_TARGET_NAMES[] = {"PITCH", "VOL", "CUTOF", "OSMIX", "FXMOD"};
+const char* FX_MODE_NAMES[] = {"CHRUS", "FLGER"};
+const char* MORPH_MODE_NAMES[] = {"HARD", "EQUAL", "LFO", "ENV", "1SHOT", "PING"};
+const char* ARP_MODE_NAMES[] = {"UP", "DOWN", "UPDWN", "RND", "PAT", "DWNUP", "INOUT", "OUTIN"};
+const char* ARP_HOLD_NAMES[] = {"OFF", "ORDER", "PLAY", "STACK", };
+const char* CHORD_TYPE_NAMES[] = {"MAJ", "MIN", "SUS2", "SUS4", "PWR", "MAJ7", "MIN7", "7", "PLAYD", "REST", "END"};
+const char* SEQ_MODE_NAMES[] = {"CHORD", "ARP", "MELDY"};
+const char* SEQ_STATE_NAMES[] = {"OFF", "REC", "ON"};
+const char* SEQ_DIR_NAMES[] = {"FWD", "BWD", "RND"};
+const char* SEQ_TRANSITION_NAMES[] = {"TRG", "LEG"};
 const char* ADSR_ABRV[] = {"DL", "A", "LV", "D", "S", "R"};
 const char* TABLE_SIZES[] = {"256", "512", "1024", "2048"};
 const uint16_t TABLE_SIZE_VALUES[] = {256, 512, 1024, 2048};
 const uint8_t TABLE_SIZE_COUNT = sizeof(TABLE_SIZE_VALUES) / sizeof(TABLE_SIZE_VALUES[0]);
-bool changed = false;
+
 const float DURATION_PRESETS[] = {
   0.125f, // 1/32 (Fusa)
   0.25f,  // 1/16 (Semicorchea)
@@ -275,7 +273,7 @@ enum EnvState : uint8_t {ENV_IDLE = 0, ENV_DELAY, ENV_ATTACK, ENV_DECAY, ENV_SUS
 enum LfoWaveform : uint8_t {LFO_SINE = 0, LFO_TRIANGLE, LFO_SAW, LFO_SQUARE, LFO_PULSE,LFO_SAMPHOLD, LFO_CHAOS, LFO_WAVE_COUNT};
 enum LfoTarget : uint8_t {LFO_TARGET_PITCH = 0, LFO_TARGET_VOLUME, LFO_TARGET_CUTOFF, LFO_TARGET_OSCMIX, LFO_TARGET_FX, LFO_TARGET_COUNT};
 enum FxMode : uint8_t {FX_CHORUS = 0, FX_FLANGER};
-enum MorphMode : uint8_t {MORPH_HARD = 0, MORPH_EQUAL, MORPH_LFO, MORPH_ENV};
+enum MorphMode : uint8_t {MORPH_HARD = 0, MORPH_EQUAL, MORPH_LFO, MORPH_ENV, MORPH_ONESHOT, MORPH_PINGPONG, MORPH_MODE_COUNT};
 enum ArpMode : uint8_t {ARP_UP = 0, ARP_DOWN, ARP_UPDOWN, ARP_RANDOM, ARP_PATTERN, ARP_DOWNUP, ARP_INOUT, ARP_OUTIN, ARP_MODE_COUNT};
 enum ArpHold : uint8_t {HOLD_OFF = 0, HOLD_ORDER, HOLD_PLAY, HOLD_STACK, ARP_HOLD_COUNT};
 enum SeqTransitionMode : uint8_t {SEQ_TRANS_RETRIG = 0, SEQ_TRANS_LEGATO, SEQ_TRANS_COUNT};
@@ -315,9 +313,14 @@ struct Voice {
   // VARIABLES PARA EL LFO DE MORPHING LENTO
   float morphPhase;       // Fase del LFO de esta voz (va de 0.0f a 1.0f)
   float currentMorph;     // El valor final mezclado que usará el bucle de muestras
+  bool morphActive;       // Controla si la animación debe avanzar o ya terminó
+  int8_t morphDirection;  // 1 para ir hacia END, -1 para volver a START (Ping-Pong)
+
 };
 
-Voice voices[NUM_VOICES];
+uint8_t numVoices = NUM_VOICES_DEFAULT;
+Voice voices[MAX_VOICES];
+
 
 const float inv32768 = 1.0f / 32768.0f;
 
@@ -460,6 +463,7 @@ struct SequencerStep {
   uint8_t melodyNotes[MAX_MELODY_NOTES];
   float   melodyDurations[MAX_MELODY_NOTES]; // Multiplicador del beat (ej: 0.25 = 1/16, 0.5 = 1/8)
   uint8_t melodyVelocities[MAX_MELODY_NOTES];
+  int transpose;
   uint8_t melodyCount;                       // Cantidad real de notas (1 a 16)
   bool layerChord; // true = Toca el acorde sostenido en el fondo durante este paso
 };
@@ -537,7 +541,7 @@ void updateEnvelopeRates(uint8_t osc) {
   sustainLevel[osc] = sustainLev;
 
   oscMix = ADSRmixValues[0] * 0.01f;
-  detuneAmount = ADSRmixValues[1] * 0.01f;
+  detuneAmount = ADSRmixValues[1] * 0.008f;
 }
 
 float softClipAudio(float x) {
@@ -546,7 +550,7 @@ float softClipAudio(float x) {
 }
 
 void muteVoice(uint8_t voiceIndex) {
-  if (voiceIndex >= NUM_VOICES) return;
+  if (voiceIndex >= numVoices) return;
   voices[voiceIndex].envLevel[0] = 0.0f;
   voices[voiceIndex].envLevel[1] = 0.0f;
   voices[voiceIndex].envDelaySamples[0] = 0;
@@ -572,7 +576,7 @@ int findQuietestReleaseVoice() {
   int quietest = -1;
   float quietestLevel = 1000.0f;
 
-  for (int i = 0; i < NUM_VOICES; i++) {
+  for (int i = 0; i < numVoices; i++) {
     if (voiceIsReleasing(i)) {
       float level = voiceReleaseLevel(i);
       if (level < quietestLevel) {
@@ -588,7 +592,7 @@ int findQuietestReleaseVoice() {
 void limitReleaseVoices(uint8_t maxReleaseVoices) {
   while (true) {
     uint8_t releaseCount = 0;
-    for (int i = 0; i < NUM_VOICES; i++) {
+    for (int i = 0; i < numVoices; i++) {
       if (voiceIsReleasing(i)) releaseCount++;
     }
 
@@ -608,28 +612,28 @@ int16_t readWaveSample(uint8_t osc, uint32_t index, uint32_t frac){
 }
 
 float readWaveSampleMorph(uint8_t osc, uint32_t index, uint32_t frac, float morphVal) {
-  // Apuntamos a las dos tablas en RAM asignadas a este oscilador de la voz 'v'
   int16_t* tableStart = oscWaveCache[osc];
   int16_t* tableEnd   = oscWaveCacheEnd[osc];
   
   uint32_t nextIndex = (index + 1) & tableMask;
 
-  // 1. Interpolación de Punto Fijo para Tabla INICIO (Idéntica a tu fórmula)
-  int16_t a_start = tableStart[index];
-  int16_t b_start = tableStart[nextIndex];
-  int16_t interpStart = a_start + ((int32_t)(b_start - a_start) * (int32_t)frac >> tableFracBits);
+  // 1. Interpolación de Punto Fijo para Tabla INICIO
+  int32_t a_start = tableStart[index];
+  int32_t b_start = tableStart[nextIndex];
+  int32_t interpStart = a_start + (((b_start - a_start) * (int32_t)frac) >> tableFracBits);
 
-  // 2. Interpolación de Punto Fijo para Tabla FIN (Idéntica a tu fórmula)
-  int16_t a_end = tableEnd[index];
-  int16_t b_end = tableEnd[nextIndex];
-  int16_t interpEnd = a_end + ((int32_t)(b_end - a_end) * (int32_t)frac >> tableFracBits);
+  // 2. Interpolación de Punto Fijo para Tabla FIN
+  int32_t a_end = tableEnd[index];
+  int32_t b_end = tableEnd[nextIndex];
+  int32_t interpEnd = a_end + (((b_end - a_end) * (int32_t)frac) >> tableFracBits);
 
-  // 3. Mezcla final Morphing en flotantes
-  float oscStartFloat = (float)interpStart * inv32768;
-  float oscEndFloat   = (float)interpEnd * inv32768;
+  // OPTIMIZACIÓN: Mezcla directa en enteros antes de pasar a flotante
+  int32_t blendedInt = interpStart + (int32_t)(morphVal * (float)(interpEnd - interpStart));
 
-  return oscStartFloat + morphVal * (oscEndFloat - oscStartFloat);
+  // Una única multiplicación flotante en vez de dos
+  return (float)blendedInt * inv32768;
 }
+
 
 
 float cutoffControlToHz(float control) {
@@ -717,6 +721,30 @@ bool allocateAudioBuffer(int16_t** target, size_t samples, const char* name) {
 
   Serial.printf("[MEM] ERROR: no se pudo reservar %s (%u bytes)\n", name, (unsigned int)bytes);
   return false;
+}
+
+bool isValidNumVoices(uint8_t voicesCount) {
+  return (voicesCount >= pageParam[PAGE_CONF][4].min && voicesCount <= pageParam[PAGE_CONF][4].max);
+}
+
+void loadNumVoicesFromNvs() {
+  nvsPrefs.begin("system", true);
+  uint8_t stored = nvsPrefs.getUChar("num_voices", NUM_VOICES_DEFAULT);
+  nvsPrefs.end();
+  if (!isValidNumVoices(stored)) stored = NUM_VOICES_DEFAULT;
+  numVoices = stored;
+}
+
+bool saveNumVoicesToNvs(uint8_t newVoices) {
+  if (!isValidNumVoices(newVoices)) return false;
+  nvsPrefs.begin("system", false);
+  bool ok = nvsPrefs.putUChar("num_voices", newVoices) == sizeof(uint8_t);
+  nvsPrefs.end();
+  if (ok) {
+    numVoices = newVoices;
+    hardwareReset = true; // Marca reinicio necesario para aplicar cambios
+  }
+  return ok;
 }
 
 void loadMemoryModeFromNvs() {
@@ -979,7 +1007,7 @@ void audioTask(void *param) {
 
     bool anyVoiceActive = false; 
     uint8_t activeVoiceCount = 0; 
-    for (int v = 0; v < NUM_VOICES; v++) { 
+    for (int v = 0; v < numVoices; v++) { 
       if (voices[v].active) { 
         anyVoiceActive = true; 
         activeVoiceCount++; 
@@ -1148,7 +1176,7 @@ void audioTask(void *param) {
 
       float glideSamples = glideTime * SAMPLE_RATE;  
 
-      for (int v = 0; v < NUM_VOICES; v++) { 
+      for (int v = 0; v < numVoices; v++) { 
         if (!voices[v].active) continue; 
 
         // ---------- ENVOLVENTE ----------
@@ -1247,7 +1275,7 @@ void audioTask(void *param) {
           voices[v].phaseInc1 = voices[v].targetPhaseInc1;
         }
 
-        if (morphEnabled && voices[v].active) {
+        /*if (morphEnabled && voices[v].active) {
           // 1. Avanzar la fase del LFO de la voz según el tamaño del bloque
           voices[v].morphPhase += morphInc;
           if (voices[v].morphPhase >= 1.0f) voices[v].morphPhase -= 1.0f;
@@ -1280,8 +1308,60 @@ void audioTask(void *param) {
             // 5. Calcular la posición final (Ya no necesita 'constrain' porque matemáticamente nunca se saldrá de)
             voices[v].currentMorph = morphBase + (morphLfoVal * safeDepth);
           }
+        }*/
+        if (morphEnabled && voices[v].active) {
+          
+          if (morphMode == MORPH_HARD) {
+            float morphLfoVal = sinf(2.0f * PI * voices[v].morphPhase);
+            voices[v].morphPhase += morphInc;
+            if (voices[v].morphPhase >= 1.0f) voices[v].morphPhase -= 1.0f;
+
+            voices[v].currentMorph = morphBase + (morphLfoVal * morphDepth);
+            voices[v].currentMorph = constrain(voices[v].currentMorph, 0.0f, 1.0f);
+          }
+          else if (morphMode == MORPH_LFO) {
+            voices[v].currentMorph = constrain(morphBase + (lfoValue * effectiveLfoDepth), 0.0f, 1.0f);
+          }
+          else if (morphMode == MORPH_ENV) {
+            voices[v].currentMorph = constrain(morphBase + (voices[v].envLevel[0] * morphDepth), 0.0f, 1.0f);
+          }
+          else if (morphMode == MORPH_EQUAL) {
+            float morphLfoVal = sinf(2.0f * PI * voices[v].morphPhase);
+            voices[v].morphPhase += morphInc;
+            if (voices[v].morphPhase >= 1.0f) voices[v].morphPhase -= 1.0f;
+
+            float maxAllowedDepth = (morphBase < 0.5f) ? morphBase : (1.0f - morphBase);
+            voices[v].currentMorph = morphBase + (morphLfoVal * (morphDepth * maxAllowedDepth));
+          }
+          // ====== NUEVO MODO: ONE-SHOT (START -> END -> PARA) ======
+          else if (morphMode == MORPH_ONESHOT) {
+            if (voices[v].morphActive) {
+              voices[v].morphPhase += morphInc; // morphInc determina la velocidad del viaje
+              if (voices[v].morphPhase >= 1.0f) {
+                voices[v].morphPhase = 1.0f;
+                voices[v].morphActive = false; // Se detiene al llegar al final
+              }
+            }
+            voices[v].currentMorph = voices[v].morphPhase;
+          }
+          // ====== NUEVO MODO: PING-PONG (START -> END -> START -> PARA) ======
+          else if (morphMode == MORPH_PINGPONG) {
+            if (voices[v].morphActive) {
+              voices[v].morphPhase += morphInc * voices[v].morphDirection;
+              
+              if (voices[v].morphDirection == 1 && voices[v].morphPhase >= 1.0f) {
+                voices[v].morphPhase = 1.0f;
+                voices[v].morphDirection = -1; // Cambia de rumbo hacia START
+              } 
+              else if (voices[v].morphDirection == -1 && voices[v].morphPhase <= 0.0f) {
+                voices[v].morphPhase = 0.0f;
+                voices[v].morphActive = false; // Se detiene al regresar al origen
+              }
+            }
+            voices[v].currentMorph = voices[v].morphPhase;
+          }
         }
-        else{
+        else {
           voices[v].currentMorph = 0.0f; 
         }
 
@@ -1395,12 +1475,17 @@ void setup() {
     Serial.println("[MEM] PSRAM no detectada, usando RAM interna");
   }
   loadMemoryModeFromNvs();
-  parametroPages[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1 : 0;
+  pageParam[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1 : 0;
   Serial.printf("[MEM] Modo reserva buffers: %s\n", memoryMode == MEMORY_INTERNAL ? "RAM interna primero" : "AUTO (PSRAM primero)");
 
   loadTableSizeFromNvs();
-  parametroPages[0][6].value = (float)tableSizeToIndex(tableSize);
+  pageParam[0][6].value = tableSizeToIndex(tableSize);
   Serial.printf("[WAV] TABLE_SIZE: %u (bits=%u fracBits=%u)\n", tableSize, tableBits, tableFracBits);
+
+  // --- CARGA DE numVoices ---
+  loadNumVoicesFromNvs();
+  pageParam[0][4].value = numVoices; // Sincroniza la UI
+  Serial.printf("[SYS] Voces de polifonía activas: %u (Límite max: %u)\n", numVoices, MAX_VOICES);
 
   if (!initAudioMemory()) {
     Serial.println("[MEM] ERROR FATAL reservando memoria de audio");
@@ -1435,8 +1520,6 @@ void setup() {
     leds.setColor(i,OFF);
   }
   leds.setColor(currentPage, GREEN);
-  SimpleColor color = oscSelect ? CYAN : YELLOW;
-  leds.setColor(9, color);
   leds.show();
 
   // 1. Encoders
@@ -1478,7 +1561,7 @@ void setup() {
   iconSprite.createSprite(ICON_W, ICON_H);
   tft.setFreeFont(LAB_TEXT);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("SyntheBasic", 100, 120);
+  tft.drawString("SYNTHEBASIC V2", 100, 120);
   delay(500);
   
   

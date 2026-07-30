@@ -6,7 +6,7 @@ void noteOn(uint8_t note, uint8_t velocity) {
   int voiceIndex = -1;
 
   limitReleaseVoices(maxReleaseVoices);
-  for (int i = 0; i < NUM_VOICES; i++) {
+  for (int i = 0; i < numVoices; i++) {
     if (!voices[i].active) {
       voiceIndex = i;
       break;
@@ -38,17 +38,20 @@ void noteOn(uint8_t note, uint8_t velocity) {
   voices[voiceIndex].active = true;
   lastNoteFreq = baseFreq;
   hasLastNote = true;
+
+  voices[voiceIndex].morphPhase = 0.0f;
+  voices[voiceIndex].morphActive = true;
+  voices[voiceIndex].morphDirection = 1;
 }
 
 void noteOff(uint8_t note) {
 
-  for (int i = 0; i < NUM_VOICES; i++) {
+  for (int i = 0; i < numVoices; i++) {
     if (voices[i].active && voices[i].midiNote == note) {
       for (uint8_t osc = 0; osc < N_OSC; osc++) voices[i].envState[osc] = ENV_RELEASE;
     }
   }
 }
-
 
 void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
   uint8_t command = status & 0xF0;
@@ -79,7 +82,8 @@ void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
           }
         } 
         else {
-          noteOn(data1, data2); // Modo MELODÍA o notas simples
+          int transposedNote = constrain((int)data1 + step.transpose, 0, 127);
+          noteOn((uint8_t)transposedNote, data2);
         }
       }
       // --- FIN PREESCUCHA (Comienza tu lógica global original) ---
@@ -128,7 +132,8 @@ void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
         }
       } 
       else {
-        noteOff(data1);
+        int transposedNote = constrain((int)data1 + step.transpose, 0, 127);
+        noteOff((uint8_t)transposedNote);
       }
     }
     // --- FIN APAGAR NOTAS PREESCUCHA ---
@@ -156,94 +161,6 @@ void handleMidiUsb() {
   #endif
 }
 
-/*void handleMIDI() {
-
-  while (Serial2.available()) {
-
-    uint8_t midibyte = Serial2.read();
-
-    if (midibyte & 0x80) {
-      // Es status byte
-      midiStatus = midibyte;
-      waitingForData2 = false;
-    }
-    else {
-
-      if (!waitingForData2) {
-        midiData1 = midibyte;
-        waitingForData2 = true;
-      }
-      else {
-
-        uint8_t midiData2 = midibyte;
-        waitingForData2 = false;
-
-        uint8_t command = midiStatus & 0xF0;
-
-        if (command == 0x90) {   // Note On
-          if (midiData2 > 0) {
-            bool wasPressed = midiKeysDown[midiData1];
-            if (!wasPressed) {
-              midiKeysDown[midiData1] = true;
-              if (midiKeysPressedCount < 127) midiKeysPressedCount++;
-            }
-            captureSequencerStepFromMidi(midiData2);
-
-            if (arpEnabled) {
-              // 👉 Si HOLD está activo y esta es la primera tecla nueva
-              ArpHold holdMode = effectiveArpHold();
-              if (holdMode != HOLD_OFF && holdMode != HOLD_STACK && midiKeysPressedCount == 1) {
-                arpClearNoteSoft();   // limpia acorde anterior pero no el index
-              }
-              arpAddNote(midiData1, midiData2);
-              if (arpSamplesToNextStep == 0) arpSamplesToNextStep = 1;
-            }
-            else {
-              if (latchEnabled && midiKeysPressedCount == 1) {
-                releaseAllVoices();
-                resetLfoAttackRequested = true;
-                
-              }
-              if (chordAssistantEnabled) playChordFromRoot(midiData1, midiData2);
-              else noteOn(midiData1, midiData2);
-            }
-          }
-          else {
-            if (midiKeysDown[midiData1]) {
-              midiKeysDown[midiData1] = false;
-              if (midiKeysPressedCount > 0) midiKeysPressedCount--;
-            }
-
-            if (arpEnabled) {
-              if (effectiveArpHold() == HOLD_OFF) arpRemoveNote(midiData1);
-            }
-            else if (!latchEnabled) {
-              if (chordAssistantEnabled) stopChordFromRoot(midiData1);
-              else noteOff(midiData1);
-            }
-          }
-        }
-
-        else if (command == 0x80) {  // Note Off
-          if (midiKeysDown[midiData1]) {
-            midiKeysDown[midiData1] = false;
-            if (midiKeysPressedCount > 0) midiKeysPressedCount--;
-          }
-
-          if (arpEnabled) {
-            if (effectiveArpHold() == HOLD_OFF) arpRemoveNote(midiData1);
-          }
-          else if (!latchEnabled) {
-            if (chordAssistantEnabled) stopChordFromRoot(midiData1);
-            else noteOff(midiData1);
-          }
-        }
-      }
-    }
-  }
-
-  handleMidiUsb();
-}*/
 void handleMIDI() {
   while (Serial2.available()) {
     uint8_t midibyte = Serial2.read();

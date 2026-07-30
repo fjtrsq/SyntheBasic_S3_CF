@@ -206,7 +206,7 @@ uint32_t arpStepSamples() {
 }
 
 void releaseAllVoices() {
-  for (int i = 0; i < NUM_VOICES; i++) {
+  for (int i = 0; i < numVoices; i++) {
     if (voices[i].active) {
       for (uint8_t osc = 0; osc < N_OSC; osc++) voices[i].envState[osc] = ENV_RELEASE;
     }

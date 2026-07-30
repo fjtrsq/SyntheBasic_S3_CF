@@ -32,7 +32,7 @@ bool presetSaveByName(const char* name) {
 
   for (uint8_t page = 0; page < SAVED_PARAM_PAGES; page++) {
     for (uint8_t param = 0; param < PARAMS_PER_PAGE; param++) {
-      preset.values[page][param] = parametroPages[page][param].value;
+      preset.values[page][param] = pageParam[page][param].value;
     }
   }
   for (uint8_t osc = 0; osc < N_OSC; osc++) {
@@ -67,7 +67,7 @@ bool presetLoadByName(const char* name) {
   suppressUiRefresh = true;
   for (uint8_t page = 0; page < SAVED_PARAM_PAGES; page++) {
     for (uint8_t param = 0; param < PARAMS_PER_PAGE; param++) {
-      parametroPages[page][param].value = preset.values[page][param];
+      pageParam[page][param].value = preset.values[page][param];
       refreshValue((Page)page, param, 0);
     }
   }
@@ -138,9 +138,9 @@ void refreshPresetFileList(bool keepCurrentSelection) {
   presetFileCount = 0;
   fs::File root = LittleFS.open("/");
   if (!root || !root.isDirectory()) {
-    parametroPages[PAGE_FILE][0].min = 0;
-    parametroPages[PAGE_FILE][0].max = 0;
-    parametroPages[PAGE_FILE][0].value = 0;
+    pageParam[PAGE_FILE][0].min = 0;
+    pageParam[PAGE_FILE][0].max = 0;
+    pageParam[PAGE_FILE][0].value = 0;
     presetSelectFileByIndex(0);
     return;
   }
@@ -170,17 +170,17 @@ void refreshPresetFileList(bool keepCurrentSelection) {
   }
 
   if (presetFileCount == 0) {
-    parametroPages[PAGE_FILE][0].min = 0;
-    parametroPages[PAGE_FILE][0].max = 0;
-    parametroPages[PAGE_FILE][0].value = 0;
+    pageParam[PAGE_FILE][0].min = 0;
+    pageParam[PAGE_FILE][0].max = 0;
+    pageParam[PAGE_FILE][0].value = 0;
     presetSelectFileByIndex(0);
     return;
   }
 
-  parametroPages[PAGE_FILE][0].min = 0;
-  parametroPages[PAGE_FILE][0].max = presetFileCount - 1;
+  pageParam[PAGE_FILE][0].min = 0;
+  pageParam[PAGE_FILE][0].max = presetFileCount - 1;
 
-  int selectedIndex = parametroPages[PAGE_FILE][0].value;
+  int selectedIndex = pageParam[PAGE_FILE][0].value;
   if (keepCurrentSelection) {
     selectedIndex = -1;
     for (uint8_t i = 0; i < presetFileCount; i++) {
@@ -189,13 +189,13 @@ void refreshPresetFileList(bool keepCurrentSelection) {
         break;
       }
     }
-    if (selectedIndex < 0) selectedIndex = constrain(parametroPages[PAGE_FILE][0].value, 0, presetFileCount - 1);
+    if (selectedIndex < 0) selectedIndex = constrain(pageParam[PAGE_FILE][0].value, 0, presetFileCount - 1);
   }
   else {
-    selectedIndex = constrain(parametroPages[PAGE_FILE][0].value, 0, presetFileCount - 1);
+    selectedIndex = constrain(pageParam[PAGE_FILE][0].value, 0, presetFileCount - 1);
   }
 
-  parametroPages[PAGE_FILE][0].value = selectedIndex;
+  pageParam[PAGE_FILE][0].value = selectedIndex;
   presetSelectFileByIndex(selectedIndex);
   drawPresetFileList();
 }
@@ -203,7 +203,7 @@ void refreshPresetFileList(bool keepCurrentSelection) {
 void endFeedbackPreset(uint32_t time){
   if(millis() - presetActionTime > time){
     flagTime = false;
-    parametroPages[PAGE_FILE][presetActionParam].value = 0;
+    pageParam[PAGE_FILE][presetActionParam].value = 0;
     drawValue(presetActionParam);
     presetActionParam = -1;
     memset(presetActionLabel, 0, sizeof(presetActionLabel));
@@ -225,8 +225,8 @@ void setFeedbackPreset(uint8_t param, const char* label) {
 }
 
 void presetInsertSelectedChar(bool autoAdvance) {
-  int pos = parametroPages[PAGE_FILE][6].value;
-  int charIdx = parametroPages[PAGE_FILE][7].value;
+  int pos = pageParam[PAGE_FILE][6].value;
+  int charIdx = pageParam[PAGE_FILE][7].value;
 
   for (int i = 0; i < pos; i++) {
     if (presetEditName[i] == '\0') {
@@ -238,7 +238,7 @@ void presetInsertSelectedChar(bool autoAdvance) {
 
   if (autoAdvance && pos < PN_LEN - 1) {
     pos++;
-    parametroPages[PAGE_FILE][6].value = pos;
+    pageParam[PAGE_FILE][6].value = pos;
     drawValue(6);
   }
   drawExtraValue();
