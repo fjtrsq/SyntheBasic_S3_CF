@@ -369,11 +369,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 else arpRateHz = value  * 0.1f;
                 break;
       case 50: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpMode = (ArpMode)value;
-                else {
-                  arpMode = (ArpMode)value;
-                  if(arpMode == ARP_CUSTOM_REC) currentPage = PAGE_ARP_REC;
-                    //arpCustomRec();
-                }
+                else arpMode = (ArpMode)value;
                 break;
       case 51: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpOctaves = value;
                 else arpOctaves = value;
@@ -496,12 +492,6 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
         ADSRpage[param].min, ADSRpage[param].max);
     }
     updateEnvelopeRates(oscSelect);
-  }
-
-  else if(page == PAGE_ARP_REC){
-    customArp[arpIdx].noteIdx = constrain(customArp[arpIdx].noteIdx + dirAcc,
-      0, MAX_ARP_CUSTOM_NOTES - 1);
-    Serial.printf("Paso %d Idx %d Steps %d\n", arpIdx, customArp[arpIdx].noteIdx, customArp[arpIdx].steps);
   }
 
   if (!applyingPageDefaultsToggle) {
@@ -685,13 +675,6 @@ void processControl(){
       drawExtraValue();
       leds.setColor(currentPage, RED);
       leds.show();
-    }
-
-    else if(currentPage == PAGE_ARP_REC){
-      totalArpCustomSteps += enc;
-      if(totalArpCustomSteps > MAX_ARP_CUSTOM_STEPS || totalArpCustomSteps < 0){
-        customArp[arpIdx].steps += enc;
-      }
     }
   }
 }

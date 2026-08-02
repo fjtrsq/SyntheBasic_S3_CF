@@ -122,7 +122,7 @@ uint8_t midiData1 = 0;
 bool waitingForData2 = false;
 
 enum Type : uint8_t {INT = 0, ONOFF, NAME, CHARSEL, FFILE, NULO};
-enum Page : uint8_t {PAGE_CONF = 0, PAGE_LFO, PAGE_MORPH, PAGE_CHORUS, PAGE_CHORD, PAGE_SEQ, PAGE_ARP, PAGE_FILE, PAGE_ADSR, PAGE_ARP_REC, PAGE_COUNT}; 
+enum Page : uint8_t {PAGE_CONF = 0, PAGE_LFO, PAGE_MORPH, PAGE_CHORUS, PAGE_CHORD, PAGE_SEQ, PAGE_ARP, PAGE_FILE, PAGE_ADSR, PAGE_COUNT}; 
 
 const uint8_t MAIN_PARAM_PAGES = 8;// incluida PAGE_FILE
 const uint8_t SAVED_PARAM_PAGES = 7;
