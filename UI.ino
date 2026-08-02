@@ -147,13 +147,14 @@ void toggleADSRDefaults(uint8_t osc) {
 
 void refreshValue(Page page, uint8_t param , int dirAcc){
   uint16_t color = 0;
+
   if(page < MAIN_PARAM_PAGES) {
     pageParam[page][param].value = constrain(pageParam[page][param].value + dirAcc,
                 pageParam[page][param].min,pageParam[page][param].max);
     const int value = pageParam[page][param].value;
     uint8_t parametroRaw = page * PARAMS_PER_PAGE + param;
     switch (parametroRaw) {
-      //pagina 1 CONFIG currentPage = 0
+    //pagina 1 CONFIG currentPage = 0
       case 0:  velocityExponent = value * 0.1f; break;
       case 1:  sequencerBpm = (uint16_t)value; break;
       case 2:  varPulse = value * 0.01; 
@@ -208,18 +209,21 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 break;
               } 
           
-      //pagina 2 LFO currentPage = 1
+    //pagina 2 LFO currentPage = 1
       case 8:  lfoWaveform = (LfoWaveform)value; break;
       case 9:  lfoRateHz = value * 0.1f; break;
       case 10: lfoDepth = value * 0.01f; break;
-      case 11: lfoTarget = (LfoTarget)value; break;
+      case 11: valueSelectLFO = (LfoTarget)value;
+               leds.setColor(currentPage, RED);
+               leds.show();
+               break;
       case 12: lfoAttackTime = value * 0.001f; break;
       case 13: cutoffControl = value * 0.1f; 
                filterCutoffHz = cutoffControlToHz(cutoffControl); break;
       case 14: lfoPitchUpdateSamples = (uint8_t)value; break;
       case 15: filterResonance = value * 0.01f; break;
 
-      //pagina 3 GLIDE/MORPH currentPage = 2
+    //pagina 3 GLIDE/MORPH currentPage = 2
       case 16: glideTime = value * 0.001f; break;
       case 17: morphEnabled = value * 1.0f;
                if (!suppressUiRefresh) {
@@ -252,7 +256,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 22: morphRateHz = value * 0.01f; break; 
       case 23: morphDepth = value * 0.01f; break;
       
-      //pagina 4 FX CHORUS currentPage = 3
+    //pagina 4 FX CHORUS currentPage = 3
       case 24: modFxEnabled = value >= 0.5f ? 1.0f : 0.0f; break;
       case 25: modFxMode = (FxMode)value; break;
       case 26: modFxRateHz = value * 0.01f; break;
@@ -262,7 +266,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 30: modFxMix = value * 0.01; break;
       case 31: modFxStereo = value * 0.01f; break;
   
-      //pagina 5 CHORD  currentPage = 4
+    //pagina 5 CHORD  currentPage = 4
       case 32: if (sequencerState != SEQ_STATE_OFF) break;
                 else{ chordAssistantEnabled = value >= 0.5f; break;}
       case 33: if (sequencerState != SEQ_STATE_OFF) break;
@@ -286,7 +290,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 else chordDensity = (uint8_t)value;
                 break;
       
-      //pagina 6 SEQUENCER currentPage = 5
+    //pagina 6 SEQUENCER currentPage = 5
       case 40:
         sequencerState = (SequencerState)value;
         sequencerEnabled = sequencerState == SEQ_STATE_ON;
@@ -312,12 +316,11 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
         if (sequencerSteps[sequencerEditStep].mode == SEQ_MODE_MELODY){
           pageParam[5][3].value = sequencerSteps[sequencerEditStep].transpose;
           redrawParam(3,{"TRANS", sequencerSteps[sequencerEditStep].transpose, -24, 24, INT});
-        }
-        else {
+        } else {
           pageParam[5][3].value = sequencerSteps[sequencerEditStep].root;
           redrawParam(3,{"ROOT", sequencerSteps[sequencerEditStep].root, 24, 96, INT});
         }
-        pageParam[5][4].value = sequencerSteps[sequencerEditStep].chord;
+        pageParam[5][4].value = sequencerSteps[sequencerEditStep].chord;Serial.printf("Chord %d\n",pageParam[5][4].value);
         pageParam[5][5].value = sequencerSteps[sequencerEditStep].bars;
         pageParam[5][6].value = sequencerSteps[sequencerEditStep].velocity;
         pageParam[5][7].value = selectedDurationIdx;
@@ -328,14 +331,20 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
         drawExtraValue();
         break;
       case 42: sequencerSteps[sequencerEditStep].mode = (SequencerMode)value;
-              if(value == SEQ_MODE_MELODY) drawMelody(sequencerEditStep);
+              if(value == SEQ_MODE_MELODY) {
+                drawMelody(sequencerEditStep);
+                pageParam[5][3].value = sequencerSteps[sequencerEditStep].transpose;
+                redrawParam(3,{"TRANS", sequencerSteps[sequencerEditStep].transpose, -24, 24, INT});
+              } else {
+                pageParam[5][3].value = sequencerSteps[sequencerEditStep].root;
+                redrawParam(3,{"ROOT", sequencerSteps[sequencerEditStep].root, 24, 96, INT});
+              }
               break;  
       case 43: if (sequencerSteps[sequencerEditStep].mode == SEQ_MODE_MELODY){
-          pageParam[5][3].value = sequencerSteps[sequencerEditStep].transpose;
-        }
-        else {
-          pageParam[5][3].value = sequencerSteps[sequencerEditStep].root;
-        }
+                sequencerSteps[sequencerEditStep].transpose = value;
+              } else {
+                sequencerSteps[sequencerEditStep].root = value;
+              }
       case 44: sequencerSteps[sequencerEditStep].chord = (ChordType)value;
                 if (sequencerSteps[sequencerEditStep].chord != CHORD_PLAYED) sequencerSteps[sequencerEditStep].playedCount = 0;
                 break;
@@ -350,7 +359,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 }
                 break;
 
-      //pagina 7 ARPPEGIATOR currentPage = 6
+    //pagina 7 ARPPEGIATOR currentPage = 6
       case 48: if (sequencerState != SEQ_STATE_OFF) break;
                 else{
                   arpEnabled = value >= 0.5f; 
@@ -360,7 +369,11 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 else arpRateHz = value  * 0.1f;
                 break;
       case 50: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpMode = (ArpMode)value;
-                else arpMode = (ArpMode)value;
+                else {
+                  arpMode = (ArpMode)value;
+                  if(arpMode == ARP_CUSTOM_REC) currentPage = PAGE_ARP_REC;
+                    //arpCustomRec();
+                }
                 break;
       case 51: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpOctaves = value;
                 else arpOctaves = value;
@@ -381,7 +394,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 drawExtraValue();
                 break;
   
-      //Pagina 8 FILE currentPage 7
+    //Pagina 8 FILE currentPage 7
       case 56: presetSelectFileByIndex(value); break;
       case 57:
         if (value == 1) {
@@ -485,6 +498,12 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
     updateEnvelopeRates(oscSelect);
   }
 
+  else if(page == PAGE_ARP_REC){
+    customArp[arpIdx].noteIdx = constrain(customArp[arpIdx].noteIdx + dirAcc,
+      0, MAX_ARP_CUSTOM_NOTES - 1);
+    Serial.printf("Paso %d Idx %d Steps %d\n", arpIdx, customArp[arpIdx].noteIdx, customArp[arpIdx].steps);
+  }
+
   if (!applyingPageDefaultsToggle) {
     if (page == PAGE_LFO && page1UsingDefaults) {
       for (uint8_t i = 0; i < PARAMS_PER_PAGE; i++) page1EditedValues[i] = pageParam[1][i].value;
@@ -535,8 +554,18 @@ void setPage(Page page){
   if(page >= PARAM_PAGES) return;
   if(page != currentPage){
     currentPage = page;
+    valueSelectLFO = lfoTarget;// vuelve al valor no confirmado
+    pageParam[PAGE_LFO][3].value = (LfoTarget)lfoTarget;
     if (sequencerState != SEQ_STATE_OFF && (currentPage == PAGE_CHORD || currentPage == PAGE_ARP)) {
       syncSequencerScopedValues(sequencerEditStep);
+    }
+    if(currentPage == PAGE_SEQ){
+      if (sequencerSteps[sequencerEditStep].mode == SEQ_MODE_MELODY){
+        pageParam[PAGE_SEQ][3] = {"TRANS", sequencerSteps[sequencerEditStep].transpose, -24, 24, INT};    
+      }
+      else {
+        pageParam[PAGE_SEQ][3] = {"ROOT", sequencerSteps[sequencerEditStep].root, 24, 96, INT};
+      }
     }
     drawUI();
     leds.setColor(lastPage, OFF);
@@ -547,7 +576,10 @@ void setPage(Page page){
   else{
     switch(page){
       case PAGE_LFO:
-        applyPageDefaultsToggle(page, PAGE1_DEFAULTS, page1EditedValues, page1UsingDefaults);
+        lfoTarget = (LfoTarget)valueSelectLFO;
+        pageParam[PAGE_LFO][3].value = (LfoTarget)lfoTarget;
+        leds.setColor(currentPage, GREEN);
+        leds.show();
       break;
       case PAGE_MORPH:
         syncActiveWaveCache(0, oscWaveform[0], WAVE_START);
@@ -565,6 +597,7 @@ void setPage(Page page){
       break;
       case PAGE_SEQ:
         seqCopyNextStep(sequencerEditStep);
+        
       break;
       case PAGE_FILE:
         presetInsertSelectedChar(true);
@@ -639,10 +672,9 @@ void processControl(){
         case PAGE_SEQ:
           sequencerTransitionMode = (SeqTransitionMode)constrain((int)sequencerTransitionMode + enc, 0, SEQ_TRANS_COUNT - 1);
         break;
-        case PAGE_ARP:
-          
-        break;
-       }
+        
+      }
+
       drawExtraValue();
     }
     else if(currentPage == PAGE_ADSR){
@@ -653,6 +685,13 @@ void processControl(){
       drawExtraValue();
       leds.setColor(currentPage, RED);
       leds.show();
+    }
+
+    else if(currentPage == PAGE_ARP_REC){
+      totalArpCustomSteps += enc;
+      if(totalArpCustomSteps > MAX_ARP_CUSTOM_STEPS || totalArpCustomSteps < 0){
+        customArp[arpIdx].steps += enc;
+      }
     }
   }
 }
@@ -694,6 +733,7 @@ void botonAmarillo(){
       }
       else toggleADSRDefaults(0);
     }
+    
 
   }
 }
@@ -1172,7 +1212,12 @@ void drawArp(uint8_t step){
 }
 
 void drawChord(uint8_t step){
-
+  tft.setFreeFont(NUM_TEXT);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(TFT_GREEN);
+  char buf[20] = "";
+  snprintf(buf, sizeof(buf), "CHORD: %s",  CHORD_TYPE_NAMES[sequencerSteps[step].chord]);
+  tft.drawString(buf, 20, 190);
 }
 
 void drawSqrBots(const char* am, const char* az){
@@ -1261,7 +1306,13 @@ void refreshAudioScope(){
 }
 
 void redrawParam(uint8_t p, const Param& param){
+  tft.setFreeFont(LAB_TEXT);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(TFT_GREEN);
+  tft.fillRect((p&3)*80, 5 + ((p>>2)*60), 80, 10, TFT_BLACK);
   pageParam[currentPage][p] = param;
+  tft.drawString(getParamName(currentPage, p), 40 + ((p&3)*80), 5 + ((p>>2)*60));
+  drawValue(p);
 }
 
 void drawLabels(){
@@ -1308,7 +1359,7 @@ void drawWaveAudioIcon(uint8_t idWave, int posX, int posY, uint16_t color) {
 }
 
 void drawUI(){
-  drawLabels();
+  drawLabels(); //borra la pantalla
   for(byte i=0;i<8;i++){
     drawValue(i);
   }

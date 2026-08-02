@@ -53,6 +53,14 @@ void noteOff(uint8_t note) {
   }
 }
 
+void releaseAllVoices() {
+  for (int i = 0; i < numVoices; i++) {
+    if (voices[i].active) {
+      for (uint8_t osc = 0; osc < N_OSC; osc++) voices[i].envState[osc] = ENV_RELEASE;
+    }
+  }
+}
+
 void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
   uint8_t command = status & 0xF0;
 

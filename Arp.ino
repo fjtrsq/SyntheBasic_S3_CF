@@ -37,7 +37,7 @@ void arpAddNote(uint8_t note, uint8_t velocity) {
       return;
     }
   }
-  if (arpHeldCount < 16) {
+  if (arpHeldCount < MAX_ARP_STEPS) {
     arpHeldNotes[arpHeldCount] = note;
     arpHeldVelocities[arpHeldCount] = velocity;
     arpHeldCount++;
@@ -175,7 +175,11 @@ ArpNote arpGetNextNote() {
     case ARP_OUTIN:
       index = arpIndexOutIn(step, total);
       break;
-
+    case ARP_CUSTOM:
+      if(arpCustomLength > 0){
+        index = customArp[step].noteIdx;
+      }
+    break;
     case ARP_PATTERN:
     default: {
       index = step % total;
@@ -205,10 +209,6 @@ uint32_t arpStepSamples() {
   return out;
 }
 
-void releaseAllVoices() {
-  for (int i = 0; i < numVoices; i++) {
-    if (voices[i].active) {
-      for (uint8_t osc = 0; osc < N_OSC; osc++) voices[i].envState[osc] = ENV_RELEASE;
-    }
-  }
+void arpCustomRec(){
+
 }
