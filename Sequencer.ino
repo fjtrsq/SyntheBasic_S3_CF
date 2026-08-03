@@ -611,7 +611,7 @@ uint8_t sequencerArpToneFromStep(uint8_t arpStep, uint8_t toneCount, ArpMode mod
       return step % toneCount;
 
     case ARP_CUSTOM:
-      return customArp[step].noteIdx;
+      return customArpPattern[step];
 
     case ARP_UP:
     default:

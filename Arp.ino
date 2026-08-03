@@ -176,10 +176,10 @@ ArpNote arpGetNextNote() {
       index = arpIndexOutIn(step, total);
       break;
     case ARP_CUSTOM:
-      if(arpCustomLength > 0){
-        index = customArp[step].noteIdx;
+      if(customArpLength > 0 && arpHeldCount > 0){
+        index = getCustomArpIndex(arpStepIndex);
       }
-    break;
+      break;
     case ARP_PATTERN:
     default: {
       index = step % total;
@@ -209,6 +209,3 @@ uint32_t arpStepSamples() {
   return out;
 }
 
-void arpCustomRec(){
-
-}

@@ -1,18 +1,21 @@
 const char* getParamName(Page page, uint8_t param) {
   if (page == PAGE_ADSR) return ADSRpage[param].name;
+  else if(page == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT) return arpCustom[param].name;
   else return pageParam[page][param].name;
 }
 
 Type getParamType(Page page, uint8_t param) {
   if (page == PAGE_ADSR) return ADSRpage[param].type;
+  //else if(page == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT) return arpCustom[param].type;
   else return pageParam[page][param].type;
 }
 
 int getParamValue(Page page, uint8_t param) {
   if (page == PAGE_ADSR) {
-      if (param < TOTAL_ADSR) return ADSRvalues[oscSelect][param];
-      return ADSRmixValues[param - TOTAL_ADSR];
+    if (param < TOTAL_ADSR) return ADSRvalues[oscSelect][param];
+    return ADSRmixValues[param - TOTAL_ADSR];
   }
+  else if(page == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT) return arpCustom[param].value;
   else return pageParam[page][param].value;
 }
 
@@ -68,7 +71,8 @@ void processEncoders() {
             lastClickTime[i] = now;
             int32_t rango = 1;
             int32_t acc = 1;
-            if (currentPage == PAGE_ADSR) rango = ADSRpage[i].max - ADSRpage[i].min; 
+            if (currentPage == PAGE_ADSR) rango = ADSRpage[i].max - ADSRpage[i].min;
+            else if (customArpEditorState == CUSTOM_ARP_EDIT && currentPage == PAGE_ARP) rango = 1;
             else rango = pageParam[currentPage][i].max - pageParam[currentPage][i].min;
 
             if(rango > 15){
@@ -147,6 +151,12 @@ void toggleADSRDefaults(uint8_t osc) {
 
 void refreshValue(Page page, uint8_t param , int dirAcc){
   uint16_t color = 0;
+  // NUEVO: Si estamos en editor de arpegio personalizado
+  if (page == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT) {
+    processCustomArpEditor(param, dirAcc);
+    
+    return;
+  }
 
   if(page < MAIN_PARAM_PAGES) {
     pageParam[page][param].value = constrain(pageParam[page][param].value + dirAcc,
@@ -366,7 +376,10 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                   if (!arpEnabled) arpClearNotes(); break;
                 }
       case 49: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpRateHz = value * 0.1f;
-                else arpRateHz = value  * 0.1f;
+                else {
+                  arpRateHz = value  * 0.1f;
+                  arpCustom[param].value = value;
+                }
                 break;
       case 50: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpMode = (ArpMode)value;
                 else arpMode = (ArpMode)value;
@@ -478,7 +491,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
 
   }
 
-  //pagina 9 ADSR currentPage = 8
+    //pagina 9 ADSR currentPage = 8
   else if(page == PAGE_ADSR) { 
     if (param < TOTAL_ADSR) {
       ADSRvalues[oscSelect][param] = constrain(ADSRvalues[oscSelect][param] + dirAcc,
@@ -543,6 +556,7 @@ void resetADSR(uint8_t osc){
 void setPage(Page page){
   if(page >= PARAM_PAGES) return;
   if(page != currentPage){
+    
     currentPage = page;
     valueSelectLFO = lfoTarget;// vuelve al valor no confirmado
     pageParam[PAGE_LFO][3].value = (LfoTarget)lfoTarget;
@@ -709,6 +723,13 @@ void botonAmarillo(){
       drawExtraValue();
      
     }
+    else if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_IDLE){
+      enterCustomArpEditor();
+    }
+    else if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT){
+      resetCustomArpPattern(); // Resetea el patrón
+    }
+
     else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
       if (oscSelect != 0) {
         oscSelect = 0;
@@ -726,6 +747,9 @@ void botonAzul(){
     if(currentPage == PAGE_SEQ){
       uint8_t step = sequencerEditStep & 0x07;
       seqDeleteStep(step);
+    }
+    else if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT){
+      exitCustomArpEditor();
     }
       
     else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
@@ -747,7 +771,7 @@ void drawValue(uint8_t i){
   char buf[12];
   char charBuf[2] = {0};
   const char* textValue = nullptr;
-  uint8_t pos = 40;
+  
   int value = getParamValue(currentPage, i);
   switch(getParamType(currentPage, i)){
     
@@ -800,7 +824,7 @@ void drawValue(uint8_t i){
   tft.setTextColor(TFT_WHITE);
   if(currentPage == PAGE_CONF && bitRead(confFlagRed, i)) tft.setTextColor(TFT_RED);
   tft.fillRect((i&3)*80, 28 + ((i>>2)*60), 80, 22, TFT_BLACK);
-  tft.drawString(textValue, pos + ((i&3)*80), 30 + ((i>>2)*60));
+  tft.drawString(textValue, 40 + ((i&3)*80), 30 + ((i>>2)*60));
 }
 
 void uint8ToBinaryStr(uint8_t num, char *buffer) {
@@ -847,7 +871,8 @@ void drawExtraValue(){
       break;
     }
     case PAGE_ARP: 
-      uint8ToBinaryStr(arpPatternMask, buf);
+      if(customArpEditorState != CUSTOM_ARP_EDIT) uint8ToBinaryStr(arpPatternMask, buf);
+      else return;
       break;
     case PAGE_FILE: {
       char nameBuf[PN_LEN + 1];
@@ -870,15 +895,15 @@ void drawExtraValue(){
       tft.print(selected);
       tft.setTextColor(TFT_WHITE);
       tft.print(suffix);
+      return;
       break;
     }
     case PAGE_ADSR:
       snprintf(buf, sizeof(buf), "%s: %s", OSC_NAME[oscSelect], WAVE_LONG_NAMES[oscWaveform[oscSelect]]);
       break;
   }
-  if (currentPage != PAGE_FILE) {
-    tft.drawString(buf, x, y);
-  }
+  
+  tft.drawString(buf, x, y);
   Serial.println(buf);
 }
 
@@ -980,10 +1005,10 @@ void drawAudioWaveform(){
   const int w = (currentPage == PAGE_MORPH) ? 160 : 220;
   const int h = 75;
   const int left = x + 2;//8
-  const int right = x + w - 3;//236
+  const int right = x + w - 3;
   const int top = y + 4;//165
-  const int bottom = y + h - 6;//233
-  const int midY = y + h / 2;//120
+  const int bottom = y + h - 6;
+  const int midY = y + h / 2;
   const int amp = (bottom - top) / 2;
   int16_t samples[AUDIO_SCOPE_SAMPLES];
   int32_t sum = 0;
@@ -1203,24 +1228,27 @@ void drawChord(uint8_t step){
   tft.drawString(buf, 20, 190);
 }
 
-void drawSqrBots(const char* am, const char* az){
+void drawSqrBots(const char* am, const char* az, int y){
   int x1 = 241;
   int x2 = 281;
   int w = 35;
   int h = 24;
-  int y = 128;
 
   tft.fillRect(x1,y,(w * 2) + 5, h, TFT_BLACK);
-  tft.drawRect(x1,y,w,h, TFT_YELLOW);
-  tft.drawRect(x2,y,w,h, TFT_CYAN);
-
+  
   tft.setFreeFont(LAB_TEXT);
   tft.setTextDatum(TC_DATUM);
-  tft.setTextColor(TFT_YELLOW);
-  tft.drawString(am, x1 + 18, y + 5);
-  tft.setTextColor(TFT_CYAN);
-  tft.drawString(az, x2 + 18, y + 5);
-
+  
+  if(am != ""){
+    tft.setTextColor(TFT_YELLOW);
+    tft.drawRect(x1,y,w,h, TFT_YELLOW);
+    tft.drawString(am, x1 + 18, y + 5);
+  }
+  if(az != ""){
+    tft.setTextColor(TFT_CYAN);
+    tft.drawRect(x2,y,w,h, TFT_CYAN);
+    tft.drawString(az, x2 + 18, y + 5);
+  }
 } 
 
 void  drawMainVisualization(){
@@ -1264,6 +1292,10 @@ void  drawMainVisualization(){
       drawExtraValue();
       drawSqrBots("A","B");
       leds.setColor(9, color);
+      break;
+
+    case PAGE_ARP:
+      drawSqrBots("CST","");
       break;
 
     default:
@@ -1342,6 +1374,11 @@ void drawWaveAudioIcon(uint8_t idWave, int posX, int posY, uint16_t color) {
 }
 
 void drawUI(){
+  if (customArpEditorState == CUSTOM_ARP_EDIT && currentPage == PAGE_ARP) {
+    drawCustomArpEditor();
+    return;
+  }
+
   drawLabels(); //borra la pantalla
   for(byte i=0;i<8;i++){
     drawValue(i);

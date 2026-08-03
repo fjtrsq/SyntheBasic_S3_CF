@@ -213,7 +213,7 @@ Param pageParam[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
   {
     {"ARP", 0, 0, 1, ONOFF},          {"RATE", 60, 10, 200, INT},
     {"MODE", 0, 0, 9, NAME},          {"OCTAVE", 1, 1, 3, INT},
-    {"GATE", 61, 10, 95, INT},        {"HOLD", 1, 1, 3, NAME},
+    {"GATE", 60, 10, 95, INT},        {"HOLD", 1, 1, 3, NAME},
     {"SWING", 0, 0, 45, INT},         {"MASK", 255, 1, 255, INT},
   },
   {
@@ -223,6 +223,7 @@ Param pageParam[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
     {"POS", 0, 0, PN_LEN-1,  INT},    {"CHAR", 1, 0, 38,  CHARSEL}
   }
 };
+
 
 byte confFlagRed = 0;
 
@@ -243,7 +244,7 @@ const char* LFO_SHAPE_NAMES[] = {"SINE", "TRI", "SAW", "SQR","PULSE", "S&H", "CH
 const char* LFO_TARGET_NAMES[] = {"PITCH", "VOL", "CUTOF", "OSMIX", "FXMOD"};
 const char* FX_MODE_NAMES[] = {"CHRUS", "FLGER"};
 const char* MORPH_MODE_NAMES[] = {"HARD", "EQUAL", "LFO", "ENV", "1SHOT", "PING"};
-const char* ARP_MODE_NAMES[] = {"UP", "DOWN", "UPDWN", "RND", "PAT", "DWNUP", "INOUT", "OUTIN", "CUSTM", "C.REC"};
+const char* ARP_MODE_NAMES[] = {"UP", "DOWN", "UPDWN", "RND", "PAT", "DWNUP", "INOUT", "OUTIN", "CUSTM"};
 const char* ARP_HOLD_NAMES[] = {"OFF", "ORDER", "PLAY", "STACK", };
 const char* CHORD_TYPE_NAMES[] = {"MAJ", "MIN", "SUS2", "SUS4", "PWR", "MAJ7", "MIN7", "7", "PLAYD", "REST", "END"};
 const char* SEQ_MODE_NAMES[] = {"CHORD", "ARP", "MELDY"};
@@ -262,7 +263,7 @@ enum LfoWaveform : uint8_t {LFO_SINE = 0, LFO_TRIANGLE, LFO_SAW, LFO_SQUARE, LFO
 enum LfoTarget : uint8_t {LFO_TARGET_PITCH = 0, LFO_TARGET_VOLUME, LFO_TARGET_CUTOFF, LFO_TARGET_OSCMIX, LFO_TARGET_FX, LFO_TARGET_COUNT};
 enum FxMode : uint8_t {FX_CHORUS = 0, FX_FLANGER};
 enum MorphMode : uint8_t {MORPH_HARD = 0, MORPH_EQUAL, MORPH_LFO, MORPH_ENV, MORPH_ONESHOT, MORPH_PINGPONG, MORPH_MODE_COUNT};
-enum ArpMode : uint8_t {ARP_UP = 0, ARP_DOWN, ARP_UPDOWN, ARP_RANDOM, ARP_PATTERN, ARP_DOWNUP, ARP_INOUT, ARP_OUTIN, ARP_CUSTOM, ARP_CUSTOM_REC, ARP_MODE_COUNT};
+enum ArpMode : uint8_t {ARP_UP = 0, ARP_DOWN, ARP_UPDOWN, ARP_RANDOM, ARP_PATTERN, ARP_DOWNUP, ARP_INOUT, ARP_OUTIN, ARP_CUSTOM, ARP_MODE_COUNT};
 enum ArpHold : uint8_t {HOLD_OFF = 0, HOLD_ORDER, HOLD_PLAY, HOLD_STACK, ARP_HOLD_COUNT};
 enum SeqTransitionMode : uint8_t {SEQ_TRANS_RETRIG = 0, SEQ_TRANS_LEGATO, SEQ_TRANS_COUNT};
 enum ChordType : uint8_t {CHORD_MAJOR = 0,CHORD_MINOR,CHORD_SUS2,CHORD_SUS4,CHORD_POWER,CHORD_MAJ7,CHORD_MIN7,CHORD_DOM7,CHORD_PLAYED,CHORD_REST,CHORD_END,CHORD_TYPE_COUNT};
@@ -383,8 +384,7 @@ ArpHold arpHold = HOLD_ORDER;
 float arpSwing = 0.0f;
 uint8_t arpPatternMask = 0xFF;
 const int MAX_ARP_STEPS = 16;
-const int MAX_ARP_CUSTOM_NOTES = 8;
-const int MAX_ARP_CUSTOM_STEPS = 16;
+
 uint8_t arpHeldNotes[MAX_ARP_STEPS] = {0};
 uint8_t arpHeldVelocities[MAX_ARP_STEPS] = {0};
 uint8_t arpHeldCount = 0;
@@ -399,14 +399,24 @@ struct ArpNote {
   uint8_t note;
   uint8_t velocity;
 };
-struct CustomArp {
-  uint8_t noteIdx;
-  uint8_t steps;
+const int C_ARP_MAX_NOTES = 8; 
+const int C_ARP_MAX_STEPS = 16;
+enum CustomArpEditorState : uint8_t {
+  CUSTOM_ARP_IDLE = 0,        // No está en modo edición
+  CUSTOM_ARP_EDIT = 1,     // Está editando los pasos
 };
-CustomArp customArp[MAX_ARP_CUSTOM_STEPS];
-uint8_t arpIdx = 0;
-uint8_t arpCustomLength = 8;
-int8_t totalArpCustomSteps = 0;
+CustomArpEditorState customArpEditorState = CUSTOM_ARP_IDLE; 
+
+Param arpCustom[4] = {
+  {"STEP", 0, 0, C_ARP_MAX_STEPS - 1, INT},    {"INDEX", 0, 0, C_ARP_MAX_NOTES - 1, INT},
+  {"LENGTH", 8, 1, C_ARP_MAX_STEPS, INT},      {"RATE", 60, 10, 200, INT}
+};
+
+uint8_t customArpEditStep = 0;          // Paso actual siendo editado (0-7)
+//uint8_t customArpPatternLength = 8;     // Longitud actual del patrón (1-8)
+uint8_t customArpPattern[MAX_ARP_STEPS] = {0, 2, 4, 1, 3, 0, 2, 1, 0, 3, 4, 2, 1, 0, 2, 3};
+uint8_t customArpLength = 8;
+
 bool latchEnabled = false;
 
 
@@ -521,6 +531,8 @@ struct StoredPreset {
 };
 
 void endFeedbackPreset(uint32_t time = 2000);
+void drawSqrBots(const char* am, const char* az, int y = 128);
+
 
 void IRAM_ATTR isrEnc() { updateEnc = true; }
 void IRAM_ATTR isrBtn() { updateBtn = true; }
