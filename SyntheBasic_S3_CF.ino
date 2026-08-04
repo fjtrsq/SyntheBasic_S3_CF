@@ -213,7 +213,7 @@ Param pageParam[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
   {
     {"ARP", 0, 0, 1, ONOFF},          {"RATE", 60, 10, 200, INT},
     {"MODE", 0, 0, 9, NAME},          {"OCTAVE", 1, 1, 3, INT},
-    {"GATE", 60, 10, 95, INT},        {"HOLD", 1, 1, 3, NAME},
+    {"GATE", 50, 1, 100, INT},        {"HOLD", 1, 1, 3, NAME},
     {"SWING", 0, 0, 45, INT},         {"MASK", 255, 1, 255, INT},
   },
   {
@@ -409,18 +409,21 @@ CustomArpEditorState customArpEditorState = CUSTOM_ARP_IDLE;
 
 #define ARP_REST 255 // Mapeado desde -1
 #define ARP_TIE  254 // Mapeado desde -2
+const int MAX_CUSTOM_PARAM = 7;
 
-Param arpCustom[4] = {
+Param arpCustom[MAX_CUSTOM_PARAM] = {
   {"STEP", 0, 0, C_ARP_MAX_STEPS - 1, INT},    
   {"INDEX", 0, -2, C_ARP_MAX_NOTES - 1, INT},
   {"LENGTH", 8, 1, C_ARP_MAX_STEPS, INT},      
-  {"RATE", 60, 10, 200, INT}
-};
+  {"RATE", 60, 10, 200, INT},
+  {"OCTAVE", 1, 1, 3, INT},
+  {"GATE", 50, 1, 100, INT},
+  {"SWING", 0, 0, 45, INT},
+}; 
 
-uint8_t customArpEditStep = 0;          // Paso actual siendo editado (0-7)
-//uint8_t customArpPatternLength = 8;     // Longitud actual del patrón (1-8)
-int8_t customArpPattern[MAX_ARP_STEPS] = {0, 2, 4, 1, 3, 0, 2, 1, 0, 3, 4, 2, 1, 0, 2, 3};
-uint8_t customArpLength = 8;
+uint8_t customArpEditStep = 0;          // Paso actual siendo editado (0-7)   
+int8_t customArpPattern[C_ARP_MAX_STEPS] = {0, 2, 4, 1, 3, 0, 2, 1, 0, 3, 4, 2, 1, 0, 2, 3};
+uint8_t customArpLength = 8;        // Longitud actual del patrón (1-8)
 
 bool latchEnabled = false;
 

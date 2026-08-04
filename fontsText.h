@@ -1,7 +1,7 @@
 // Created by https://oleddisplay.squix.ch/ Consider a donation
 // In case of problems make sure that you are using the font file with the correct version!
 
-// labelText
+// LABEL_TEXT
 const uint8_t Orbitron_Medium_13Bitmaps[] PROGMEM = {
 
 	// Bitmap Data:
@@ -142,7 +142,7 @@ const GFXglyph Orbitron_Medium_13Glyphs[] PROGMEM = {
 const GFXfont Orbitron_Medium_13 PROGMEM = {
 (uint8_t  *)Orbitron_Medium_13Bitmaps,(GFXglyph *)Orbitron_Medium_13Glyphs,0x20, 0x5F, 12};
 
-// numText
+// NUM_TEXT
 const uint8_t modern_lcd_78pt7bBitmaps[] PROGMEM = {
   0x00, 0x7F, 0xFF, 0xDF, 0xC0, 0xF0, 0x6D, 0xDF, 0xBF, 0x7E, 0xE0, 0x19,
   0x83, 0x98, 0x39, 0x83, 0x98, 0x7F, 0xEF, 0xFF, 0x39, 0x83, 0x98, 0x30,
@@ -327,7 +327,7 @@ const GFXglyph modern_lcd_78pt7bGlyphs[] PROGMEM = {
 const GFXfont modern_lcd_78pt7b PROGMEM = {
   (uint8_t  *)modern_lcd_78pt7bBitmaps, (GFXglyph *)modern_lcd_78pt7bGlyphs, 0x20, 0x5F, 19};
 
-// fileText
+// FILE_TEXT
 const uint8_t Roboto_Medium_12Bitmaps[] PROGMEM = {
 	// Bitmap Data:
 	0x00, // ' '

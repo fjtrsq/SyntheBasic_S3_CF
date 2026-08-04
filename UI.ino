@@ -555,8 +555,9 @@ void resetADSR(uint8_t osc){
 
 void setPage(Page page){
   if(page >= PARAM_PAGES) return;
+  if (page == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT) return;
+  
   if(page != currentPage){
-    
     currentPage = page;
     valueSelectLFO = lfoTarget;// vuelve al valor no confirmado
     pageParam[PAGE_LFO][3].value = (LfoTarget)lfoTarget;
@@ -726,9 +727,6 @@ void botonAmarillo(){
     else if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_IDLE){
       enterCustomArpEditor();
     }
-    else if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT){
-      resetCustomArpPattern(); // Resetea el patrón
-    }
 
     else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
       if (oscSelect != 0) {
@@ -739,6 +737,11 @@ void botonAmarillo(){
     }
     
 
+  }
+  if(botAm.longPress()){
+    if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT){
+      resetCustomArpPattern(); // Resetea el patrón
+    }
   }
 }
 
@@ -1236,18 +1239,18 @@ void drawSqrBots(const char* am, const char* az, int y){
 
   tft.fillRect(x1,y,(w * 2) + 5, h, TFT_BLACK);
   
-  tft.setFreeFont(LAB_TEXT);
+  tft.setFreeFont(FILE_TEXT);
   tft.setTextDatum(TC_DATUM);
   
   if(am != ""){
     tft.setTextColor(TFT_YELLOW);
     tft.drawRect(x1,y,w,h, TFT_YELLOW);
-    tft.drawString(am, x1 + 18, y + 5);
+    tft.drawString(am, x1 + 18, y + 7);
   }
   if(az != ""){
     tft.setTextColor(TFT_CYAN);
     tft.drawRect(x2,y,w,h, TFT_CYAN);
-    tft.drawString(az, x2 + 18, y + 5);
+    tft.drawString(az, x2 + 18, y + 7);
   }
 } 
 

@@ -24,16 +24,19 @@ void enterCustomArpEditor() {
   if (sequencerState != SEQ_STATE_OFF) return;
   
   if (currentPage != PAGE_ARP) setPage(PAGE_ARP);
-  arpEnabled = true;
-  arpMode = ARP_CUSTOM;
+  arpEnabled = true; pageParam[6][0].value = 1;
+  arpMode = ARP_CUSTOM; pageParam[6][2].value = ARP_CUSTOM;
   customArpEditorState = CUSTOM_ARP_EDIT;
   customArpEditStep = 0;
   
   // Sincronizar parámetros
   arpCustom[0].value = customArpEditStep;
+  arpCustom[1].value = customArpEditStep;
   arpCustom[2].value = customArpLength;
   arpCustom[3].value = (int)(arpRateHz * 10);
-
+  arpCustom[4].value = arpOctaves;
+  arpCustom[5].value = (int)(arpGate * 100);
+  arpCustom[6].value = (int)(arpSwing * 100);
   Serial.println("[CUSTOM_ARP] Entrando en editor");
   drawCustomArpEditor();
 }
@@ -42,6 +45,11 @@ void exitCustomArpEditor() {
   if (customArpEditorState != CUSTOM_ARP_EDIT) return;
   
   customArpEditorState = CUSTOM_ARP_IDLE;
+   // Sincronizar parámetros
+  pageParam[6][1].value = arpCustom[3].value;
+  pageParam[6][3].value = arpCustom[4].value;
+  pageParam[6][4].value = arpCustom[5].value;
+  pageParam[6][6].value = arpCustom[6].value;
   
   Serial.print("[CUSTOM_ARP] Patrón guardado (longitud ");
   Serial.println(customArpLength);
@@ -69,9 +77,9 @@ void drawCustomArpEditor() {
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(TFT_GREEN);
 
-  for(byte i=0;i<4;i++) tft.drawString(arpCustom[i].name, 40 + ((i&3)*80), 5 + ((i>>2)*60));
+  for(byte i=0;i<MAX_CUSTOM_PARAM;i++) tft.drawString(arpCustom[i].name, 40 + ((i&3)*80), 5 + ((i>>2)*60));
 
-  for(byte i=0;i<4;i++) drawCustomValue(i);
+  for(byte i=0;i<MAX_CUSTOM_PARAM;i++) drawCustomValue(i);
 
   drawCustomArpPattern();
   
@@ -103,13 +111,26 @@ void processCustomArpEditor(uint8_t param, int dirAcc) {
     case 2:
       customArpLength = value;
       drawCustomArpPattern();
-      Serial.printf("[CUSTOM_ARP] Longitud: %d\n", value);
       break;
 
     case 3:
       arpRateHz = value  * 0.1f;
       pageParam[6][1].value = value;
-      Serial.printf("[CUSTOM_ARP] Rate: %.1f Hz\n", arpRateHz);
+      break;
+
+    case 4:
+      arpOctaves = value;
+      pageParam[6][3].value = value;
+      break;
+
+    case 5:
+      arpGate = value * 0.01f;
+      pageParam[6][4].value = value;
+      break;
+
+    case 6:
+      arpSwing = value * 0.01;
+      pageParam[6][6].value = value;
       break;
 
     default:
@@ -130,11 +151,11 @@ void drawCustomValue(uint8_t p){
   switch(p){
     case 0: snprintf(buf, sizeof(buf), "%d", customArpEditStep + 1);
       break;
-      
+
     case 1: 
       if(customArpEditStep < customArpLength){
-        if(customArpPattern[customArpEditStep] == 0) snprintf(buf, sizeof(buf), "REST");
-        else if(customArpPattern[customArpEditStep] == -1) snprintf(buf, sizeof(buf), "LIG");
+        if(customArpPattern[customArpEditStep] == -1) snprintf(buf, sizeof(buf), "REST");
+        else if(customArpPattern[customArpEditStep] == -2) snprintf(buf, sizeof(buf), "LIG");
         else snprintf(buf, sizeof(buf), "%d", customArpPattern[customArpEditStep] + 1);
       }   
       else  snprintf(buf, sizeof(buf), "--");
@@ -145,6 +166,16 @@ void drawCustomValue(uint8_t p){
 
     case 3: snprintf(buf, sizeof(buf), "%d", pageParam[6][1].value);
        break; 
+
+    case 4: snprintf(buf, sizeof(buf), "%d", pageParam[6][3].value);
+       break;
+
+    case 5: snprintf(buf, sizeof(buf), "%d", pageParam[6][4].value);
+       break;
+
+    case 6: snprintf(buf, sizeof(buf), "%d", pageParam[6][6].value);
+       break;
+
   } 
   
   textValue = buf;
@@ -204,7 +235,7 @@ void drawCustomArpStepBox(int stepIdx) {
   tft.drawString(buf, x + 15, y + 15);
 }
     
-uint8_t getCustomArpIndex(int step) {
+uint8_t getCustomArpIndex(int step, int total) {
   if (customArpLength == 0 || arpHeldCount == 0) return 0;
   int patternPos = step % customArpLength;
   int rawVal = customArpPattern[patternPos];
@@ -214,8 +245,8 @@ uint8_t getCustomArpIndex(int step) {
   if (rawVal == -2) return ARP_TIE;  // Devuelve 254
 
   // Comportamiento normal para índices de nota (0, 1, 2...)
-  if (rawVal >= arpHeldCount) {
-    rawVal = rawVal % arpHeldCount;
+  if (rawVal >= total) { //arpHeldCount
+    rawVal = rawVal % total;
   }
 
   return (uint8_t)rawVal;

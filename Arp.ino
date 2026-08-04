@@ -177,7 +177,7 @@ ArpNote arpGetNextNote() {
       break;
     case ARP_CUSTOM:
       if(customArpLength > 0 && arpHeldCount > 0){
-        index = getCustomArpIndex(arpStepIndex);
+        index = getCustomArpIndex(step, total); //arpStepIndex
       }
       break;
     case ARP_PATTERN:
