@@ -378,8 +378,8 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       case 49: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpRateHz = value * 0.1f;
                 else {
                   arpRateHz = value  * 0.1f;
-                  arpCustom[param].value = value;
                 }
+                arpCustom[param].value = value;
                 break;
       case 50: if (sequencerState != SEQ_STATE_OFF) sequencerSteps[sequencerEditStep].arpMode = (ArpMode)value;
                 else arpMode = (ArpMode)value;

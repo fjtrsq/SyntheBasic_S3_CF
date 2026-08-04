@@ -407,14 +407,19 @@ enum CustomArpEditorState : uint8_t {
 };
 CustomArpEditorState customArpEditorState = CUSTOM_ARP_IDLE; 
 
+#define ARP_REST 255 // Mapeado desde -1
+#define ARP_TIE  254 // Mapeado desde -2
+
 Param arpCustom[4] = {
-  {"STEP", 0, 0, C_ARP_MAX_STEPS - 1, INT},    {"INDEX", 0, 0, C_ARP_MAX_NOTES - 1, INT},
-  {"LENGTH", 8, 1, C_ARP_MAX_STEPS, INT},      {"RATE", 60, 10, 200, INT}
+  {"STEP", 0, 0, C_ARP_MAX_STEPS - 1, INT},    
+  {"INDEX", 0, -2, C_ARP_MAX_NOTES - 1, INT},
+  {"LENGTH", 8, 1, C_ARP_MAX_STEPS, INT},      
+  {"RATE", 60, 10, 200, INT}
 };
 
 uint8_t customArpEditStep = 0;          // Paso actual siendo editado (0-7)
 //uint8_t customArpPatternLength = 8;     // Longitud actual del patrón (1-8)
-uint8_t customArpPattern[MAX_ARP_STEPS] = {0, 2, 4, 1, 3, 0, 2, 1, 0, 3, 4, 2, 1, 0, 2, 3};
+int8_t customArpPattern[MAX_ARP_STEPS] = {0, 2, 4, 1, 3, 0, 2, 1, 0, 3, 4, 2, 1, 0, 2, 3};
 uint8_t customArpLength = 8;
 
 bool latchEnabled = false;
@@ -1169,20 +1174,39 @@ void audioTask(void *param) {
 
           if (arpSamplesToNextStep == 0) {
             ArpNote next = arpGetNextNote();
-            if (arpGateActive) {
-              noteOff(arpCurrentNote);
-              arpGateActive = false;
-            }
-            if (next.velocity > 0) {
-              arpCurrentNote = next.note; 
-              noteOn(next.note, next.velocity);
-              arpGateActive = true;
+            if (next.note == ARP_REST) { // 1. SILENCIO (REST)
+              
+              if (arpGateActive) {
+                noteOff(arpCurrentNote);
+                arpGateActive = false;
+              }
+
+            } else if (next.note == ARP_TIE) {  // 2. LIGADURA (TIE)
+              arpGateActive = true; 
+            } 
+            else {                      // 3. NOTA NORMAL
+              if (arpGateActive) {
+                noteOff(arpCurrentNote);
+                arpGateActive = false;
+              }
+              if (next.velocity > 0) {
+                arpCurrentNote = next.note; 
+                noteOn(next.note, next.velocity);
+                arpGateActive = true;
+              }
             }
 
             uint32_t stepSamp = arpStepSamples();
             arpSamplesToNextStep = stepSamp;
-            arpGateSamplesLeft = (uint32_t)(stepSamp * arpGate);
-            if (arpGateSamplesLeft < 1) arpGateSamplesLeft = 1;
+
+            // Si estamos en un TIE, nos aseguramos de mantener el Gate vivo todo el paso
+            if (next.note == ARP_TIE) {
+              arpGateSamplesLeft = stepSamp;
+            } 
+            else {
+              arpGateSamplesLeft = (uint32_t)(stepSamp * arpGate);
+              if (arpGateSamplesLeft < 1) arpGateSamplesLeft = 1;
+            }
           }
         }
       }

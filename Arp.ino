@@ -187,6 +187,13 @@ ArpNote arpGetNextNote() {
     }
   }
 
+  // 🔹 Si es Silencio o Ligadura, devolvemos el código especial en note
+  if (index == ARP_REST || index == ARP_TIE) {
+    out.note = (uint8_t)index; 
+    out.velocity = 0;
+    return out;
+  }
+  
   // 🔹 Calcular nota base + octava (optimizado)
   int baseIdx = index % arpHeldCount;
   int note = arpHeldNotes[baseIdx] + 12 * (index / arpHeldCount);
