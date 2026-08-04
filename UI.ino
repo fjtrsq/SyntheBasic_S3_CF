@@ -91,6 +91,7 @@ void processEncoders() {
             
             int direccion = (subSteps[i] > 0) ? -1 : 1;
 
+            currentParam = i;
             refreshValue(currentPage, i, (int)(direccion * acc));
             subSteps[i] = 0;
           }
@@ -573,7 +574,7 @@ void setPage(Page page){
       }
     }
     drawUI();
-    leds.setColor(lastPage, OFF);
+    leds.setColor(lastPage, BLACK);
     leds.setColor(currentPage, GREEN);
     leds.show();
     lastPage = currentPage;
@@ -746,7 +747,13 @@ void botonAmarillo(){
 }
 
 void botonAzul(){
+
   if(botAz.singleClick()){
+    if(midiLearnActive){
+      midiLearnActive = false;
+      leds.setColor(9, colorAnt);
+      leds.show();
+    }
     if(currentPage == PAGE_SEQ){
       uint8_t step = sequencerEditStep & 0x07;
       seqDeleteStep(step);
@@ -762,6 +769,12 @@ void botonAzul(){
       }
       else toggleADSRDefaults(1);
     }
+  }
+
+  if(botAz.longPress()){
+    leds.setColor(9, MAGENTA);
+    leds.show();
+    triggerMidiLearn(currentPage, currentParam);
   }
 }
 
@@ -1255,7 +1268,8 @@ void drawSqrBots(const char* am, const char* az, int y){
 } 
 
 void  drawMainVisualization(){
-  leds.setColor(9, OFF);
+  leds.setColor(9, BLACK);
+  colorAnt = BLACK;
   SimpleColor color = oscSelect ? CYAN : YELLOW;
   switch (currentPage){
     case PAGE_ADSR:
@@ -1266,6 +1280,8 @@ void  drawMainVisualization(){
       drawExtraValue();
       drawSqrBots("DEF","DEF");
       leds.setColor(9, color);
+      colorAnt = color;
+
       break;
 
     case PAGE_FILE:
@@ -1295,6 +1311,7 @@ void  drawMainVisualization(){
       drawExtraValue();
       drawSqrBots("A","B");
       leds.setColor(9, color);
+      colorAnt = color;
       break;
 
     case PAGE_ARP:

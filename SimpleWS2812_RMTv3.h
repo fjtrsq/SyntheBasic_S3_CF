@@ -4,9 +4,7 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 
-enum SimpleColor {
-  OFF = 0,RED,ORANGE,YELLOW,LIMA,GREEN,VERDAZUL,CYAN,AZUL,BLUE,PURPLE,MAGENTA,ROJIZO,WHITE
-};
+enum SimpleColor {BLACK = 0,RED,ORANGE,YELLOW,LIMA,GREEN,VERDAZUL,CYAN,AZUL,BLUE,PURPLE,MAGENTA,ROJIZO,WHITE};
 
 template <uint16_t N>
 class SimpleWS2812_RMTv3 {
@@ -54,7 +52,7 @@ public:
       case MAGENTA: r = 255; b = 255; break;
       case ROJIZO:  r = 255; b = 128; break;
       case WHITE:   r = 255; g = 255; b = 255; break;
-      case OFF:
+      case BLACK:
       default: break;
     }
     setRGB(index, r, g, b);

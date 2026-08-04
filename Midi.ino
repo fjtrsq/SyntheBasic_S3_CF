@@ -61,6 +61,39 @@ void releaseAllVoices() {
   }
 }
 
+void handleControlChange(uint8_t cc, uint8_t value) {
+  // --- MODO MIDI LEARN ACTIVO ---
+  if (midiLearnActive) {
+    // Buscamos si este CC ya estaba asignado a otro parámetro y lo reasignamos
+    // O simplemente guardamos la asignación en la lista de mapeos dinámicos:
+    
+    // Asignamos directamente la pareja (Página, Parámetro) a este número de CC
+    midiCcMappings[cc].page = midiLearnTargetPage;
+    midiCcMappings[cc].param = midiLearnTargetParam;
+    midiCcMappings[cc].assigned = true;
+
+    Serial.printf("[MIDI LEARN] ¡Asignado! CC %d -> Pag %d, Param %d (%s)\n", 
+                  cc, midiLearnTargetPage, midiLearnTargetParam, 
+                  pageParam[midiLearnTargetPage][midiLearnTargetParam].name);
+
+    // Feedback en pantalla
+    //snprintf(presetStatus, sizeof(presetStatus), "CC %d -> %s", cc, pageParam[midiLearnTargetPage][midiLearnTargetParam].name);
+    
+
+    // Desactivar modo Learn
+    midiLearnActive = false;
+    leds.setColor(9, colorAnt);
+    leds.show();
+    return;
+  }
+
+  // --- FUNCIONAMIENTO NORMAL ---
+  // Si el CC recibido tiene una asignación activa, aplicamos el cambio
+  if (midiCcMappings[cc].assigned) {
+    applyMidiParamUpdate(midiCcMappings[cc].page, midiCcMappings[cc].param, value);
+  }
+}
+
 void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
   uint8_t command = status & 0xF0;
 
@@ -155,6 +188,9 @@ void processMidiMessage(uint8_t status, uint8_t data1, uint8_t data2) {
       }
     }
   }
+  else if (command == 0xB0) { // Control Change (CC)
+    handleControlChange(data1, data2);
+  }
 }
 
 void handleMidiUsb() {
@@ -162,7 +198,7 @@ void handleMidiUsb() {
     midiEventPacket_t packet = {0, 0, 0, 0};
     while (usbMidi.readPacket(&packet)) {
       midi_code_index_number_t cin = MIDI_EP_HEADER_CIN_GET(packet.header);
-      if (cin == MIDI_CIN_NOTE_ON || cin == MIDI_CIN_NOTE_OFF) {
+      if (cin == MIDI_CIN_NOTE_ON || cin == MIDI_CIN_NOTE_OFF || cin == MIDI_CIN_CONTROL_CHANGE) {
         processMidiMessage(packet.byte1, packet.byte2, packet.byte3);
       }
     }
@@ -196,5 +232,84 @@ void handleMIDI() {
   handleMidiUsb();
 }
 
+void triggerMidiLearn(uint8_t page, uint8_t param) {
+  midiLearnActive = true;
+  midiLearnTargetPage = page;
+  midiLearnTargetParam = param;
+  
+  // Feedback en consola / UI
+  Serial.printf("[MIDI LEARN] Esperando CC para: Pagina %d, Parametro %d (%s)...\n", 
+                page, param, pageParam[page][param].name);
 
+  // Puedes mostrar un mensaje en la pantalla usando tu sistema de estado/status
+  //snprintf(presetStatus, sizeof(presetStatus), "LEARN: %s", pageParam[page][param].name);
+  
+}
 
+void saveMidiMappingsToNvs() {
+  nvsPrefs.begin("midi_map", false);
+  nvsPrefs.putBytes("cc_map", midiCcMappings, sizeof(midiCcMappings));
+  nvsPrefs.end();
+  Serial.println("[MIDI] Mapeo guardado en NVS");
+}
+
+void loadMidiMappingsFromNvs() {
+  nvsPrefs.begin("midi_map", true);
+  if (nvsPrefs.isKey("cc_map")) {
+    nvsPrefs.getBytes("cc_map", midiCcMappings, sizeof(midiCcMappings));
+    Serial.println("[MIDI] Mapeo cargado desde NVS");
+  } else {
+    //initDefaultMidiMappings();
+  }
+  nvsPrefs.end();
+}
+
+void applyMidiParamUpdate(uint8_t page, uint8_t paramIndex, uint8_t ccValue) {
+  // Asegurarnos de que el parámetro está dentro del rango válido
+  if (paramIndex >= PARAMS_PER_PAGE) return;
+
+  // 1. MANEJO DE LA PÁGINA ADSR (PAGE_ADSR = 8)
+  if (page == PAGE_ADSR) {
+    if (paramIndex < TOTAL_ADSR) {
+      int minVal = ADSRpage[paramIndex].min;
+      int maxVal = ADSRpage[paramIndex].max;
+      ADSRvalues[oscSelect][paramIndex] = map(ccValue, 0, 127, minVal, maxVal);
+    } else if (paramIndex == 6) { // OSC MIX (0..100)
+      ADSRmixValues[0] = map(ccValue, 0, 127, 0, 100);
+    } else if (paramIndex == 7) { // DETUNE (0..100)
+      ADSRmixValues[1] = map(ccValue, 0, 127, 0, 100);
+    }
+    
+    // Recalcular tasas de la envolvente para el oscilador seleccionado
+    updateEnvelopeRates(oscSelect);
+
+    // Redibujar la UI si el usuario está actualmente viendo esta página
+    if (currentPage == PAGE_ADSR) {
+      drawMainVisualization();
+      drawValue(paramIndex);
+    }
+    return;
+  }
+
+  // 2. MANEJO DE PÁGINAS PRINCIPALES (PAGE_CONF a PAGE_FILE / PAGE 0 a 7)
+  if (page < MAIN_PARAM_PAGES) {
+    int minVal = pageParam[page][paramIndex].min;
+    int maxVal = pageParam[page][paramIndex].max;
+
+    // Escalado del valor MIDI (0-127) al rango real del parámetro
+    int mappedValue = map(ccValue, 0, 127, minVal, maxVal);
+    
+    // Calculamos el delta (dirección/incremento) necesario para refreshValue
+    int delta = mappedValue - pageParam[page][paramIndex].value;
+
+    if (delta != 0) {
+      // Ejecutamos la lógica que actualiza tanto la variable global como el motor DSP
+      refreshValue((Page)page, paramIndex, delta);
+
+      // Si la página modificada es la actual en pantalla, redibujamos el valor
+      if (currentPage == page) {
+        drawValue(paramIndex);
+      }
+    }
+  }
+}

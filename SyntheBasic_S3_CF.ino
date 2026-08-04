@@ -120,6 +120,19 @@ const int MOD_DELAY_BUFFER_SIZE = 2048;      // ~46ms @44.1kHz (chorus/flanger)
 uint8_t midiStatus = 0;
 uint8_t midiData1 = 0;
 bool waitingForData2 = false;
+bool midiLearnActive = false;
+uint8_t midiLearnTargetPage = 0;
+uint8_t midiLearnTargetParam = 0;
+unsigned long midiLearnBlinkTimer = 0;
+bool midiLearnBlinkState = false;
+SimpleColor colorAnt = BLACK;
+struct ParamTarget {
+  int8_t page = -1;
+  int8_t param = -1;
+  bool assigned = false;
+};
+
+ParamTarget midiCcMappings[128];
 
 enum Type : uint8_t {INT = 0, ONOFF, NAME, CHARSEL, FFILE, NULO};
 enum Page : uint8_t {PAGE_CONF = 0, PAGE_LFO, PAGE_MORPH, PAGE_CHORUS, PAGE_CHORD, PAGE_SEQ, PAGE_ARP, PAGE_FILE, PAGE_ADSR, PAGE_COUNT}; 
@@ -132,6 +145,7 @@ const uint8_t PN_LEN = 10; //Preset name len
 
 Page currentPage = PAGE_CONF;
 Page lastPage = PAGE_CONF;
+uint8_t currentParam = 0;
 
 const int PAGE1_DEFAULTS[PARAMS_PER_PAGE] = {0,80,50,0,       0,50,8,0};    //LFO
 const int PAGE3_DEFAULTS[PARAMS_PER_PAGE] = {0,0,55,35, 100, 15, 35, 0};  //Chorus
@@ -1557,7 +1571,7 @@ void setup() {
   leds.begin();
   leds.setBrightness(LED_BRIGHT);
   for(byte i=0;i<NUM_LEDS;i++){
-    leds.setColor(i,OFF);
+    leds.setColor(i,BLACK);
   }
   leds.setColor(currentPage, GREEN);
   leds.show();
