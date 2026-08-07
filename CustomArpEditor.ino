@@ -83,8 +83,9 @@ void drawCustomArpEditor() {
 
   drawCustomArpPattern();
   
-  drawSqrBots("RST", "EXT", 100);
+  drawSqrBots("", "RST", "EXIT", 100);
 }
+
 void processCustomArpEditor(uint8_t param, int dirAcc) {
   if (customArpEditorState != CUSTOM_ARP_EDIT) return;
 

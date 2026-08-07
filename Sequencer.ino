@@ -83,7 +83,7 @@ void processSequencerArpPreview() {
 
       uint8_t velocity = (uint8_t)seqStep.velocity * sequencerMainVelocity;
       sequencerActiveArpNote = (uint8_t)note;
-      noteOn(sequencerActiveArpNote, velocity);
+      noteOn(sequencerActiveArpNote, velocity, false);
       sequencerArpNoteOn = true;
 
       sequencerArpOffMs = now + (uint32_t)(arpTickMs * seqStep.arpGate);
@@ -165,7 +165,7 @@ void processSequencer() {
         if (note != MELODY_NOTE_REST && note < 128) {
           int transposed = (int)note + seqStep.transpose;
           sequencerActiveMelodyNote = (uint8_t)constrain(transposed, 0, 127);
-          noteOn(sequencerActiveMelodyNote, vel);
+          noteOn(sequencerActiveMelodyNote, vel, false);
           sequencerMelodyNoteOn = true;
         } else {
           sequencerMelodyNoteOn = false;
@@ -212,7 +212,7 @@ void processSequencer() {
         sequencerArpNoteOn = false;
       }
       sequencerActiveArpNote = (uint8_t)note;
-      noteOn(sequencerActiveArpNote, velocity);
+      noteOn(sequencerActiveArpNote, velocity, false);
       sequencerArpNoteOn = true;
       sequencerArpOffMs = now + (uint32_t)(arpTickMs * seqStep.arpGate);
       uint32_t swingOffset = (sequencerArpIndex & 0x01) ? (uint32_t)(arpTickMs * seqStep.arpSwing) : 0;
@@ -375,49 +375,7 @@ void seqDefault(uint8_t steps){
     sequencerSteps[n] = SEQUENCER_DEFAULT_STEP;
   }
 }
-/*
-void playSequencerChordNotes(uint8_t step, uint8_t velocity) {
-  step &= 0xF;
-  SequencerStep &seqStep = sequencerSteps[step];
-  uint8_t rootNote = seqStep.root;
-  uint8_t oldRoot = sequencerActiveRoot;
-  uint8_t oldCount = 0;
-  if (sequencerGateActive && sequencerActiveMode == SEQ_MODE_CHORD) {
-    oldCount = min(MAX_CHORD_NOTES, chordGeneratedCount[oldRoot]);
-  }
-  uint8_t oldNotes[MAX_CHORD_NOTES] = {0};
-  for (uint8_t i = 0; i < oldCount && i < MAX_CHORD_NOTES; i++) oldNotes[i] = chordGeneratedNotes[oldRoot][i];
-  clearPendingChordNotesByRoot(oldRoot);
 
-  uint8_t newNotes[SEQUENCER_MAX_PLAYED_NOTES] = {0};
-  uint8_t noteCount = buildSequencerStepNotes(step, newNotes, SEQUENCER_MAX_PLAYED_NOTES);
-  int velocityScaled = constrain((int)velocity * seqStep.chordVelocityScale, 1, 127);
-  int spreadSemi = seqStep.chordSpread * 12.0f;
-  uint32_t now = millis();
-  
-  // Stop old notes that are not in the new chord
-  for (uint8_t i = 0; i < oldCount; i++) {
-    if (!noteInList(newNotes, noteCount, oldNotes[i])) noteOff(oldNotes[i]);
-  }
-
-  // Apply strum timing and spread to new notes (matching playChordFromRoot behavior)
-  
-  for (uint8_t i = 0; i < noteCount; i++) {
-    if (!noteInList(oldNotes, oldCount, newNotes[i])) {
-      int strumDelay = (int)i * (int)seqStep.chordStrumMs * 4;
-      if (strumDelay <= 0) {
-        noteOn(newNotes[i], velocityScaled);
-      }
-      else {
-        scheduleChordNote(rootNote, newNotes[i], velocityScaled, now + (uint32_t)strumDelay);
-      }
-    }
-  }
-
-  if (oldCount > 0) chordGeneratedCount[oldRoot] = 0;
-  for (uint8_t i = 0; i < noteCount; i++) chordGeneratedNotes[rootNote][i] = newNotes[i];
-  chordGeneratedCount[rootNote] = noteCount;
-}*/
 void playSequencerChordNotes(uint8_t step, uint8_t velocity) {
   step &= 0xF;
   SequencerStep &seqStep = sequencerSteps[step];
@@ -437,7 +395,7 @@ void playSequencerChordNotes(uint8_t step, uint8_t velocity) {
   for (uint8_t i = 0; i < noteCount; i++) {
     int strumDelay = (int)i * (int)seqStep.chordStrumMs * 4;
     if (strumDelay <= 0) {
-      noteOn(newNotes[i], velocityScaled);
+      noteOn(newNotes[i], velocityScaled, false);
     }
     else {
       scheduleChordNote(rootNote, newNotes[i], velocityScaled, now + (uint32_t)strumDelay);

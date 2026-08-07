@@ -203,7 +203,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 drawExtraValue();
                 break;
               }
-      case 7: { MemoryMode selectedMode = (value > 0.5f) ? MEMORY_INTERNAL : MEMORY_PSRAM;
+      /*case 7: { MemoryMode selectedMode = (value > 0.5f) ? MEMORY_INTERNAL : MEMORY_PSRAM;
                 bool changed = selectedMode != memoryMode;
                 bool saved = !changed;
                 if (changed) {
@@ -218,7 +218,8 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 else bitClear(confFlagRed, parametroRaw);
                 drawExtraValue();
                 break;
-              } 
+              } */
+      case 7:  pitchBendRangeSemis = value; break;
           
     //pagina 2 LFO currentPage = 1
       case 8:  lfoWaveform = (LfoWaveform)value; break;
@@ -438,7 +439,6 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
           setFeedbackPreset(3, ok ? "OK" : "FAIL");
           pageParam[PAGE_FILE][param].value = 0;
           refreshPresetFileList(false);
-          
         }
         break;
       case 60:
@@ -527,10 +527,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
     drawValue(param);
     if (page == PAGE_ADSR || page == PAGE_FILE) {
       drawMainVisualization();
-
     }
-
-    Serial.printf("Page %d Param %d = %d\n", page + 1, param, getParamValue(page, param));
   }
 }
 
@@ -554,11 +551,11 @@ void resetADSR(uint8_t osc){
   drawMainVisualization();
 }
 
-void setPage(Page page){
+void setPage(Page page){ // & Button Page
   if(page >= PARAM_PAGES) return;
-  if (page == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT) return;
+  if (customArpEditorState == CUSTOM_ARP_EDIT) customArpEditorState == CUSTOM_ARP_IDLE;
   
-  if(page != currentPage){
+  if(page != currentPage){ //Change page
     currentPage = page;
     valueSelectLFO = lfoTarget;// vuelve al valor no confirmado
     pageParam[PAGE_LFO][3].value = (LfoTarget)lfoTarget;
@@ -579,7 +576,7 @@ void setPage(Page page){
     leds.show();
     lastPage = currentPage;
   }
-  else{
+  else{  // Extra function
     switch(page){
       case PAGE_LFO:
         lfoTarget = (LfoTarget)valueSelectLFO;
@@ -617,7 +614,6 @@ void setPage(Page page){
       break;
     }
   }
-  Serial.printf("Page -> %d\n", currentPage + 1);
 }
 
 void processButtons() {
@@ -728,6 +724,7 @@ void botonAmarillo(){
     else if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_IDLE){
       enterCustomArpEditor();
     }
+    
 
     else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
       if (oscSelect != 0) {
@@ -736,32 +733,45 @@ void botonAmarillo(){
       }
       else toggleADSRDefaults(0);
     }
-    
+
+    else if(currentPage == PAGE_FILE){
+      //modeFileSave += 1; if (modeFileSave == FILE_COUNT) modeFileSave = FILE_SOUND;
+      modeFileSave = static_cast<ModeFileSave>((modeFileSave + 1) % FILE_COUNT);
+      
+      drawSqrBots(MODE_FILE_NAMES[modeFileSave], "MOD", "DEL");
+      refreshPresetFileList(false);
+    }
 
   }
   if(botAm.longPress()){
     if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT){
       resetCustomArpPattern(); // Resetea el patrón
     }
+
+    else if(currentPage == PAGE_CONF){
+      resetMidiMappings();
+      resetPitchBend();
+      resetAfterChannel();
+    }
   }
 }
 
 void botonAzul(){
-
   if(botAz.singleClick()){
     if(midiLearnActive){
       midiLearnActive = false;
       leds.setColor(9, colorAnt);
       leds.show();
+      return;
     }
-    if(currentPage == PAGE_SEQ){
-      uint8_t step = sequencerEditStep & 0x07;
-      seqDeleteStep(step);
-    }
+    
     else if(currentPage == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT){
       exitCustomArpEditor();
     }
-      
+    else if(currentPage == PAGE_CONF){
+      saveMidiMappingsToFS();
+    }
+    
     else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
       if(oscSelect != 1){  
         oscSelect = 1;
@@ -769,12 +779,24 @@ void botonAzul(){
       }
       else toggleADSRDefaults(1);
     }
+
   }
 
   if(botAz.longPress()){
-    leds.setColor(9, MAGENTA);
-    leds.show();
-    triggerMidiLearn(currentPage, currentParam);
+    if(currentPage == PAGE_SEQ){
+      uint8_t step = sequencerEditStep & 0x07;
+      seqDeleteStep(step);
+    }
+    else if(currentPage == PAGE_LFO || currentPage == PAGE_MORPH || currentPage == PAGE_CHORUS) {
+      leds.setColor(9, MAGENTA);
+      leds.show();
+      triggerMidiLearn(currentPage, currentParam);
+    }
+    else if(currentPage == PAGE_FILE){
+      bool ok = presetDeleteByName(presetEditName);
+      Serial.printf("Delete preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
+      refreshPresetFileList(false);
+    }
   }
 }
 
@@ -853,27 +875,27 @@ void uint8ToBinaryStr(uint8_t num, char *buffer) {
 
 void drawExtraValue(){
   char buf[25] = "";
-  const int x = 10;
+  const int x = 5;
   const int y = 130;
   tft.setFreeFont(NUM_TEXT);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_WHITE);
-  tft.fillRect(x, y, (currentPage == PAGE_SEQ) ? 230 : 180, 20, TFT_BLACK);
+  tft.fillRect(x, y, 180, 20, TFT_BLACK);
   switch(currentPage){
     case PAGE_CONF: 
-      snprintf(buf, sizeof(buf), "%s", confFlagRed ? "RESET HW" : "");
+      snprintf(buf, sizeof(buf), " %s", confFlagRed ? "RESET HW" : "");
       break;
     case PAGE_LFO: 
-      snprintf(buf, sizeof(buf), "%s", page1UsingDefaults ? "DEFAULT" : "EDIT"); 
+      snprintf(buf, sizeof(buf), " %s", page1UsingDefaults ? "DEFAULT" : "EDIT"); 
       break;
     case PAGE_MORPH: 
       snprintf(buf, sizeof(buf), "%s",  WAVE_LONG_NAMES[oscWaveform[oscSelect]]);
       break;
     case PAGE_CHORUS: 
-      snprintf(buf, sizeof(buf), "%s", page3UsingDefaults ? "DEFAULT" : "EDIT"); 
+      snprintf(buf, sizeof(buf), " %s", page3UsingDefaults ? "DEFAULT" : "EDIT"); 
       break;
     case PAGE_CHORD:
-      snprintf(buf, sizeof(buf), "%s I%d", CHORD_TYPE_NAMES[(int)chordType], chordInversion);
+      //snprintf(buf, sizeof(buf), "%s I%d", CHORD_TYPE_NAMES[(int)chordType], chordInversion);
       break;
     case PAGE_SEQ: {
       uint8_t currentStepIdx;
@@ -883,7 +905,7 @@ void drawExtraValue(){
         currentStepIdx = sequencerEditStep & 0xF;
       }
       snprintf(buf, sizeof(buf), "%s S%d B%d %s", SEQ_TRANSITION_NAMES[(int)sequencerTransitionMode], currentStepIdx + 1, 
-      sequencerPlayBar, sequencerSteps[currentStepIdx].layerChord ? "+CHD" : "");
+      sequencerPlayBar, sequencerSteps[currentStepIdx].layerChord ? "CHD" : "");
       break;
     }
     case PAGE_ARP: 
@@ -1244,17 +1266,21 @@ void drawChord(uint8_t step){
   tft.drawString(buf, 20, 190);
 }
 
-void drawSqrBots(const char* am, const char* az, int y){
+void drawSqrBots(const char* txt, const char* am, const char* az, int y){
   int x1 = 241;
   int x2 = 281;
   int w = 35;
   int h = 24;
 
-  tft.fillRect(x1,y,(w * 2) + 5, h, TFT_BLACK);
+  tft.fillRect(x1 - ((currentPage == PAGE_ARP) ? 0 : 46) ,y,(w * 2) + 5, h, TFT_BLACK);
   
   tft.setFreeFont(FILE_TEXT);
   tft.setTextDatum(TC_DATUM);
-  
+
+  if(txt != ""){
+    tft.setTextColor(TFT_GREEN);
+    tft.drawString(txt, x1 - 23, y + 7);
+  }
   if(am != ""){
     tft.setTextColor(TFT_YELLOW);
     tft.drawRect(x1,y,w,h, TFT_YELLOW);
@@ -1265,6 +1291,10 @@ void drawSqrBots(const char* am, const char* az, int y){
     tft.drawRect(x2,y,w,h, TFT_CYAN);
     tft.drawString(az, x2 + 18, y + 7);
   }
+  if(currentPage == PAGE_SEQ){
+    tft.drawRect(x1 - 40,y,w,h, TFT_GREEN);
+  }
+
 } 
 
 void  drawMainVisualization(){
@@ -1278,18 +1308,19 @@ void  drawMainVisualization(){
       drawWaveAudioIcon(oscWaveform[0], 255, 175, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
       drawWaveAudioIcon(oscWaveform[1], 255, 217, oscSelect ? TFT_CYAN : TFT_DARKGREY);
       drawExtraValue();
-      drawSqrBots("DEF","DEF");
+      drawSqrBots("RSET", "A","B");
       leds.setColor(9, color);
       colorAnt = color;
 
       break;
 
     case PAGE_FILE:
+      drawSqrBots(MODE_FILE_NAMES[modeFileSave], "MOD", "DEL");
       drawPresetFileList();
       break;
     
     case PAGE_SEQ: {
-      drawSqrBots("CHD","DEL");    
+      drawSqrBots("CPY", "CHD","DEL");    
       uint8_t currentStepIdx;
       if (sequencerState == SEQ_STATE_ON) {
         currentStepIdx = sequencerPlayStep & 0xF;
@@ -1309,17 +1340,20 @@ void  drawMainVisualization(){
       drawWaveAudioIcon(oscWaveformEnd[0], 255, 175, morphEnabled ? TFT_YELLOW : TFT_DARKGREY);
       drawWaveAudioIcon(oscWaveformEnd[1], 255, 217, morphEnabled ? TFT_CYAN : TFT_DARKGREY);
       drawExtraValue();
-      drawSqrBots("A","B");
+      drawSqrBots("INIT", "A","B");
       leds.setColor(9, color);
       colorAnt = color;
       break;
 
     case PAGE_ARP:
-      drawSqrBots("CST","");
+      drawSqrBots("MOD","CST","");
+      break;
+
+    case PAGE_CONF:
+      drawSqrBots("MAPS", "CLR","SAV");
       break;
 
     default:
-      //drawAudioWaveform();
       drawWaveAudioIcon(oscWaveform[0], 255, 175, TFT_YELLOW);
       drawWaveAudioIcon(oscWaveform[1], 255, 217, TFT_CYAN);
       drawExtraValue();
@@ -1386,7 +1420,7 @@ void drawWaveAudioIcon(uint8_t idWave, int posX, int posY, uint16_t color) {
   // El Sprite se libera inmediatamente para poder ser reutilizado.
   iconSprite.pushSprite(posX, posY);
   // texto
-  tft.fillRect(posX,posY-18,60,17,TFT_BLACK);
+  tft.fillRect(posX-1,posY-18,62,17,TFT_BLACK);
   tft.setFreeFont(LAB_TEXT);
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(color);

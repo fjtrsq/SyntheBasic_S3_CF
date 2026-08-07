@@ -5,14 +5,14 @@ void scheduleChordNote(uint8_t root, uint8_t note, uint8_t velocity, uint32_t du
       return;
     }
   }
-  noteOn(note, velocity); // fallback si cola llena
+  noteOn(note, velocity, false); // fallback si cola llena
 }
 
 void flushPendingChordNotes() {
   uint32_t now = millis();
   for (uint8_t i = 0; i < MAX_PENDING_CHORD_NOTES; i++) {
     if (pendingChordNotes[i].active && (int32_t)(now - pendingChordNotes[i].dueMs) >= 0) {
-      noteOn(pendingChordNotes[i].note, pendingChordNotes[i].velocity);
+      noteOn(pendingChordNotes[i].note, pendingChordNotes[i].velocity, false);
       pendingChordNotes[i].active = false;
     }
   }
@@ -73,8 +73,6 @@ void applyChordInversion(int8_t* intervals, uint8_t count, uint8_t inversion) {
   }
 }
 
-//void stopChordFromRoot(uint8_t rootNote);
-
 void stopChordFromRoot(uint8_t rootNote) {
   clearPendingChordNotesByRoot(rootNote);
   uint8_t count = chordGeneratedCount[rootNote];
@@ -106,7 +104,7 @@ void playChordFromRoot(uint8_t rootNote, uint8_t velocity) {
 
     int strumDelay = (int)i * (int)chordStrumMs * 4;
     if (strumDelay <= 0) {
-      noteOn(playedNote, velocityScaled);
+      noteOn(playedNote, velocityScaled, false);
     }
     else {
       scheduleChordNote(rootNote, playedNote, velocityScaled, now + (uint32_t)strumDelay);

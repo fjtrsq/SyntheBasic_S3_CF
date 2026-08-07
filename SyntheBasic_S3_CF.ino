@@ -102,12 +102,10 @@ const uint8_t ICON_H = 20;
 uint8_t cacheGraficaOndas[WAVE_COUNT][ICON_W];
 TFT_eSprite iconSprite = TFT_eSprite(&tft);
 
-unsigned long waveEncoderMoveTime = 0;
-bool pendingWaveUpdate = false;
-const unsigned int WAVE_UPDATE_DELAY = 500;
 
 Waveform oscWaveform [N_OSC] = {WAVE_SAW, WAVE_PULSE};
 Waveform oscWaveformEnd [N_OSC] = {WAVE_SAW, WAVE_PULSE};
+
 int16_t* waveformCatalog[WAVE_COUNT] = {nullptr};
 int16_t* oscWaveCache[N_OSC] = {nullptr};
 int16_t* oscWaveCacheEnd[N_OSC] = {nullptr};
@@ -117,6 +115,10 @@ volatile Waveform oscWaveCacheEndType[N_OSC] = {WAVE_NOISE};
 
 const int MOD_DELAY_BUFFER_SIZE = 2048;      // ~46ms @44.1kHz (chorus/flanger)
 
+enum Type : uint8_t {INT = 0, ONOFF, NAME, CHARSEL, FFILE, NULO};
+enum Page : uint8_t {PAGE_CONF = 0, PAGE_LFO, PAGE_MORPH, PAGE_CHORUS, PAGE_CHORD, PAGE_SEQ, PAGE_ARP, PAGE_FILE, PAGE_ADSR, PAGE_COUNT}; 
+
+// Variable MIDI
 uint8_t midiStatus = 0;
 uint8_t midiData1 = 0;
 bool waitingForData2 = false;
@@ -126,16 +128,30 @@ uint8_t midiLearnTargetParam = 0;
 unsigned long midiLearnBlinkTimer = 0;
 bool midiLearnBlinkState = false;
 SimpleColor colorAnt = BLACK;
+
 struct ParamTarget {
   int8_t page = -1;
   int8_t param = -1;
   bool assigned = false;
 };
-
 ParamTarget midiCcMappings[128];
+ParamTarget pitchBendTarget;
+ParamTarget afterChannelTarget;
 
-enum Type : uint8_t {INT = 0, ONOFF, NAME, CHARSEL, FFILE, NULO};
-enum Page : uint8_t {PAGE_CONF = 0, PAGE_LFO, PAGE_MORPH, PAGE_CHORUS, PAGE_CHORD, PAGE_SEQ, PAGE_ARP, PAGE_FILE, PAGE_ADSR, PAGE_COUNT}; 
+uint8_t pitchBendRangeSemis = 2; //falta asignar a encoder 0_7
+float pitchBendNorm = 0.0f;
+
+struct MidiMapData {
+  decltype(midiCcMappings) ccMap;
+  decltype(pitchBendTarget) pbTarget;
+  decltype(afterChannelTarget) acTarget;
+};
+
+// --- VARIABLES GLOBALES DE AFTERTOUCH ---
+float aftertouchNorm = 0.0f;       // Presión normalizada (0.0f a 1.0f)
+float aftertouchAmount = 0.5f;     // Profundidad de modulación configurable (0.0f a 1.0f)
+// FIN MIDI
+
 
 const uint8_t MAIN_PARAM_PAGES = 8;// incluida PAGE_FILE
 const uint8_t SAVED_PARAM_PAGES = 7;
@@ -192,12 +208,12 @@ Param pageParam[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
     {"CURVE", 10,  1, 30, INT},       {"BPM", 120, 60, 200, INT},
     {"%PULSE", 20, 10, 90, INT},      {"M GAIN", 150, 10, 300, INT},
     {"VOICES", 8, 4, 16, INT},        {"N RLEAS", 3, 1, 6, INT},
-    {"WT SIZE", 3, 0, 3, NAME},       {"RAM/PSR", 0,  0, 1, ONOFF},
+    {"WT SIZE", 3, 0, 3, NAME},       {"PTCHBND", 2,  1, 24, INT},
   },
   {
     {"LFO SHP", 0, 0, 6, NAME},       {"RATE", 80, 10, 200, INT},
     {"DEPTH", 50, 0, 100, INT},       {"TARGET", 0, 0, 4, NAME},
-    {"ATTACK", 0, 0, 5000, INT},      {"CUTOFF", 50, 1, 200, INT},
+    {"ATTACK", 0, 0, 5000, INT},      {"CUTOFF", 50, 20, 200, INT},
     {"PTCH UP", 8, 1, 32, INT},       {"RESONAN", 0, 0, 100, INT},
   },
   {
@@ -242,10 +258,10 @@ Param pageParam[MAIN_PARAM_PAGES][PARAMS_PER_PAGE] = {
 byte confFlagRed = 0;
 
 const char* WAVE_LONG_NAMES[] = {"SAW", "SINE", "TRIANGLE", "SQUARE", "PULSE", "SUPER SAW", "ORGAN", "CRUSH", "DRIVE WARM",
-      "SINE EXP", "SAW EXP", "RECTIFIED", "CHEBYSHEV", "FM CLASIC", "FM METAL", "FM INDUST", "FM CRISTAL", "FM FEEDBACK", "VOCAL AA",
+      "SINE EXP", "SAW EXP", "RECTIFIED", "CHEBYSHEV", "FM CLASIC", "FM METAL", "FM INDUST", "FM CRISTAL", "FM FEDBACK", "VOCAL AA",
       "VOCAL OO", "HOLLOW", "EVEN HARM", "PINCH", "SINC PULSE", "CHIRP", "GRIT", "TRI INVERT","FRACTAL", "WIERSTRASS", "PLUCK",
       "CLARINET", "BELL METAL", "CELLO", "PARABOLIC", "TRAPEZOID", "SOFT TRI", "FOLD SAW", "CROSS MOD", "COS EXP",
-      "WARP", "SINE PWM", "TB HYBRID", "SUB HARM", "BEAT", "STEP_8BIT", "HARD SYNC", "POLYNOMIAL", "PSEUDO NOISE",
+      "WARP", "SINE PWM", "TB HYBRID", "SUB HARM", "BEAT", "STEP_8BIT", "HARD SYNC", "POLYNOMIAL", "PSD NOISE",
       "NOISE",
 };
 const char* WAVE_NAMES[] = {"SAW", "SINE", "TRI", "SQR", "PULSE", "SPSAW", "ORGAN", "CRUSH", "WARM", "SINEX", "SAWEX", "FLRCT",
@@ -271,8 +287,9 @@ const uint16_t TABLE_SIZE_VALUES[] = {256, 512, 1024, 2048};
 const uint8_t TABLE_SIZE_COUNT = sizeof(TABLE_SIZE_VALUES) / sizeof(TABLE_SIZE_VALUES[0]);
 const char* DURATION_NAMES[] = {"F","SC","SC*","C","C*","N","N*","B","B*","R"};
 const float DURATION_PRESETS[] = {0.125f,0.25f,0.375f,0.5f,0.75f,1.0f,1.5f,2.0f,3.0f,4.0f};
+const char* MODE_FILE_NAMES[] = {"SOUND", "SEQ", "C.ARP"};
 
-enum EnvState : uint8_t {ENV_IDLE = 0, ENV_DELAY, ENV_ATTACK, ENV_DECAY, ENV_SUSTAIN, ENV_RELEASE};
+enum EnvState : uint8_t {ENV_IDLE = 0, ENV_DELAY, ENV_ATTACK, ENV_DECAY, ENV_SUSTAIN, ENV_RELEASE}; 
 enum LfoWaveform : uint8_t {LFO_SINE = 0, LFO_TRIANGLE, LFO_SAW, LFO_SQUARE, LFO_PULSE,LFO_SAMPHOLD, LFO_CHAOS, LFO_WAVE_COUNT};
 enum LfoTarget : uint8_t {LFO_TARGET_PITCH = 0, LFO_TARGET_VOLUME, LFO_TARGET_CUTOFF, LFO_TARGET_OSCMIX, LFO_TARGET_FX, LFO_TARGET_COUNT};
 enum FxMode : uint8_t {FX_CHORUS = 0, FX_FLANGER};
@@ -285,6 +302,7 @@ enum SequencerMode : uint8_t {SEQ_MODE_CHORD = 0,  SEQ_MODE_ARP, SEQ_MODE_MELODY
 enum SequencerState : uint8_t {SEQ_STATE_OFF = 0, SEQ_STATE_REC, SEQ_STATE_ON, SEQ_STATE_COUNT};
 enum MemoryMode : uint8_t {MEMORY_PSRAM = 0, MEMORY_INTERNAL = 1};
 enum WaveOrder : uint8_t {WAVE_START = 0, WAVE_END};
+enum ModeFileSave : uint8_t {FILE_SOUND = 0, FILE_SEQ, FILE_C_ARP, FILE_COUNT};
 
 Preferences nvsPrefs;
 MemoryMode memoryMode = MEMORY_PSRAM;
@@ -309,7 +327,7 @@ struct Voice {
   uint32_t envDelaySamples[N_OSC];
   float velocityGain;
   uint8_t midiNote;
-
+  bool isLive = false;
   EnvState envState[N_OSC];
   bool active; 
 
@@ -323,6 +341,7 @@ struct Voice {
 
 uint8_t numVoices = NUM_VOICES_DEFAULT;
 Voice voices[MAX_VOICES];
+
 
 
 const float inv32768 = 1.0f / 32768.0f;
@@ -435,6 +454,11 @@ Param arpCustom[MAX_CUSTOM_PARAM] = {
   {"SWING", 0, 0, 45, INT},
 }; 
 
+struct StoredCustomArp {
+  int8_t pattern[C_ARP_MAX_STEPS];
+  decltype(arpCustom[0].value) values[5]; // Guarda los valores de arpCustom[2] a arpCustom[6]
+};
+
 uint8_t customArpEditStep = 0;          // Paso actual siendo editado (0-7)   
 int8_t customArpPattern[C_ARP_MAX_STEPS] = {0, 2, 4, 1, 3, 0, 2, 1, 0, 3, 4, 2, 1, 0, 2, 3};
 uint8_t customArpLength = 8;        // Longitud actual del patrón (1-8)
@@ -534,6 +558,8 @@ uint8_t selectedDurationIdx = 3; //selector de duracion de nota
 char presetEditName[PN_LEN + 1] = "INIT";
 const char PRESET_CHARS[] = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ";
 
+ModeFileSave modeFileSave = FILE_SOUND;
+
 int8_t presetActionParam = -1;
 char presetActionLabel[8] = "";
 uint32_t presetActionTime = 0;
@@ -552,9 +578,11 @@ struct StoredPreset {
   int oscMix[2];
 };
 
-void endFeedbackPreset(uint32_t time = 2000);
-void drawSqrBots(const char* am, const char* az, int y = 128);
 
+
+void endFeedbackPreset(uint32_t time = 2000);
+void drawSqrBots( const char* txt, const char* am, const char* az, int y = 128);
+void noteOn(uint8_t note, uint8_t velocity, bool isLive = true);
 
 void IRAM_ATTR isrEnc() { updateEnc = true; }
 void IRAM_ATTR isrBtn() { updateBtn = true; }
@@ -782,24 +810,6 @@ bool saveNumVoicesToNvs(uint8_t newVoices) {
   return ok;
 }
 
-void loadMemoryModeFromNvs() {
-  nvsPrefs.begin("system", true);
-  uint8_t stored = nvsPrefs.getUChar("mem_mode", (uint8_t)MEMORY_PSRAM);
-  nvsPrefs.end();
-  memoryMode = (stored == (uint8_t)MEMORY_INTERNAL) ? MEMORY_INTERNAL : MEMORY_PSRAM;
-}
-
-bool saveMemoryModeToNvs(MemoryMode mode) {
-  nvsPrefs.begin("system", false);
-  bool ok = nvsPrefs.putUChar("mem_mode", (uint8_t)mode) == sizeof(uint8_t);
-  nvsPrefs.end();
-  if (ok) {
-    memoryMode = mode;
-    hardwareReset = true;
-  }
-  return ok;
-}
-
 bool isValidTableSize(uint16_t size) {
   for (uint8_t i = 0; i < TABLE_SIZE_COUNT; i++) {
     if (TABLE_SIZE_VALUES[i] == size) return true;
@@ -879,31 +889,22 @@ bool allocateWaveTables() {
 }
 
 void syncActiveWaveCache(uint8_t osc, Waveform wave, WaveOrder tipo) {
-  //osc = 0 || 1 Normal wave or start Wave; 2 || 3 End Wave
+  
   if (osc > 1 || wave >= WAVE_COUNT) return;
   if(tipo == WAVE_START){
     if (oscWaveCache[osc] == nullptr || waveformCatalog[wave] == nullptr) return;
     if (oscWaveCacheType[osc] == wave) return;
-    //if (pendingWaveUpdate && (millis() - waveEncoderMoveTime > WAVE_UPDATE_DELAY)) {
-      //portENTER_CRITICAL(&audioMux);
-      memcpy(oscWaveCache[osc], waveformCatalog[wave], tableSize * sizeof(int16_t));
-      oscWaveCacheType[osc] = wave;
-      //portEXIT_CRITICAL(&audioMux);
-      //  pendingWaveUpdate = false;
-      Serial.printf("Waveform oscilator %d => %s\n", osc+1, WAVE_NAMES[wave]);
-    //}
+    memcpy(oscWaveCache[osc], waveformCatalog[wave], tableSize * sizeof(int16_t));
+    oscWaveCacheType[osc] = wave;
+    Serial.printf("Waveform oscilator %d => %s\n", osc+1, WAVE_NAMES[wave]);
 
   }
   else {
     if (oscWaveCacheEnd[osc] == nullptr || waveformCatalog[wave] == nullptr) return;
     if (oscWaveCacheEndType[osc] == wave) return;
-    //if (pendingWaveUpdate && (millis() - waveEncoderMoveTime > WAVE_UPDATE_DELAY)) {
-    //  portENTER_CRITICAL(&audioMux);
-      memcpy(oscWaveCacheEnd[osc], waveformCatalog[wave], tableSize * sizeof(int16_t));
-      oscWaveCacheEndType[osc] = wave;
-    //  portEXIT_CRITICAL(&audioMux);
-      Serial.printf("Waveform End oscilator %d => %s\n", osc+1, WAVE_NAMES[wave]);
-    //}
+    memcpy(oscWaveCacheEnd[osc], waveformCatalog[wave], tableSize * sizeof(int16_t));
+    oscWaveCacheEndType[osc] = wave;
+    Serial.printf("Waveform End oscilator %d => %s\n", osc+1, WAVE_NAMES[wave]);
   }
 } 
 
@@ -1208,7 +1209,7 @@ void audioTask(void *param) {
               }
               if (next.velocity > 0) {
                 arpCurrentNote = next.note; 
-                noteOn(next.note, next.velocity);
+                noteOn(next.note, next.velocity, false);
                 arpGateActive = true;
               }
             }
@@ -1526,20 +1527,26 @@ void setup() {
   if (psramFound()) {
     Serial.printf("[MEM] PSRAM detectada: %u bytes\n", (unsigned int)ESP.getPsramSize());
   } else {
+    memoryMode = MEMORY_INTERNAL;
     Serial.println("[MEM] PSRAM no detectada, usando RAM interna");
   }
-  loadMemoryModeFromNvs();
-  pageParam[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1 : 0;
+  if(!digitalRead(PIN_AM)){
+    memoryMode = MEMORY_INTERNAL;
+    Serial.println("[MEM] RAM interna seleccionada en inicio");
+  }
+  //loadMemoryModeFromNvs();
+  //pageParam[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1 : 0;
   Serial.printf("[MEM] Modo reserva buffers: %s\n", memoryMode == MEMORY_INTERNAL ? "RAM interna primero" : "AUTO (PSRAM primero)");
 
   loadTableSizeFromNvs();
   pageParam[0][6].value = tableSizeToIndex(tableSize);
   Serial.printf("[WAV] TABLE_SIZE: %u (bits=%u fracBits=%u)\n", tableSize, tableBits, tableFracBits);
 
-  // --- CARGA DE numVoices ---
   loadNumVoicesFromNvs();
   pageParam[0][4].value = numVoices; // Sincroniza la UI
   Serial.printf("[SYS] Voces de polifonía activas: %u (Límite max: %u)\n", numVoices, MAX_VOICES);
+
+  loadMidiMappingsFromFS();
 
   if (!initAudioMemory()) {
     Serial.println("[MEM] ERROR FATAL reservando memoria de audio");
@@ -1563,8 +1570,6 @@ void setup() {
   }
   Serial.println("LittleFS OK");
   refreshPresetFileList(false);
-  Serial.println("refreshPresetFileList");
-  
   
 
   // 0. Leds
@@ -1613,13 +1618,16 @@ void setup() {
   tft.setRotation(3);
   tft.fillScreen(TFT_BLACK);
   iconSprite.createSprite(ICON_W, ICON_H);
+  
+  tft.setTextColor(TFT_GREEN, TFT_BLACK);
+  tft.setTextDatum(TC_DATUM);
+  tft.setFreeFont(NUM_TEXT);
+  tft.drawString("SYNTHEBASIC V2", 160, 120);
+  tft.setTextColor(TFT_WHITE);
   tft.setFreeFont(LAB_TEXT);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("SYNTHEBASIC V2", 100, 120);
-  delay(500);
+  tft.drawString(memoryMode ? "INTERNAL MEMORY" : "PSRAM MEMORY", 160, 150);
+  delay(2000);
   
-  
-
   Serial.println("TFT configurada");
 
   

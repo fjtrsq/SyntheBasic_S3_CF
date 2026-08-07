@@ -1,7 +1,7 @@
 // Created by https://oleddisplay.squix.ch/ Consider a donation
 // In case of problems make sure that you are using the font file with the correct version!
 
-// LABEL_TEXT
+// LAB_TEXT
 const uint8_t Orbitron_Medium_13Bitmaps[] PROGMEM = {
 
 	// Bitmap Data:
