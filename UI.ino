@@ -578,6 +578,7 @@ void setPage(Page page){ // & Button Page
         pageParam[PAGE_SEQ][3] = {"ROOT", sequencerSteps[sequencerEditStep].root, 24, 96, INT};
       }
     }
+    else if(currentPage == PAGE_ADSR) startADSRchanges();
     drawUI();
     leds.setColor(lastPage, BLACK);
     leds.setColor(currentPage, GREEN);
@@ -725,7 +726,7 @@ void botonEncoder(){
     
 }
 
-void startADSRSequence() {
+void startADSRchanges() {
   for (uint8_t osc = 0; osc < N_OSC; osc++) {
     for (uint8_t i = 0; i < TOTAL_ADSR; i++) {
       ADSRchangesBackup[osc][i] = ADSRvalues[osc][i];
@@ -736,13 +737,13 @@ void startADSRSequence() {
   ADSRchangesMode = 0;
 }
 
-void executeADSRSequence(uint8_t osc) {
+void executeADSRchanges(uint8_t osc) {
 
   uint8_t otherOsc = (osc == 0) ? 1 : 0;
 
   // Si es la primera operación, hacemos el backup
   if (!ADSRchangesActive) {
-    startADSRSequence();
+    startADSRchanges();
   }
 
   switch (ADSRchangesMode) {
@@ -845,7 +846,7 @@ void botonAmarillo(){
 
       // OSCILADOR A YA SELECCIONADO
       else {
-        executeADSRSequence(0);
+        executeADSRchanges(0);
       }
     }
 
@@ -906,7 +907,7 @@ void botonAzul(){
 
       // OSCILADOR A YA SELECCIONADO
       else {
-        executeADSRSequence(0);
+        executeADSRchanges(1);
       }
     }
 
