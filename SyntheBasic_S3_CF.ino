@@ -178,6 +178,9 @@ int ADSRedited[N_OSC][TOTAL_ADSR] = {{10,200,70,500,0,100},{10,200,70,500,0,100}
 int ADSRvalues[N_OSC][TOTAL_ADSR] = {{10,200,70,500,0,100},{10,200,70,500,0,100}};
 int ADSRmixValues[2] = {50, 1};
 bool adsrUsingDefaults[N_OSC] = {false, false};
+int ADSRchangesBackup[N_OSC][TOTAL_ADSR];
+bool ADSRchangesActive = false;
+uint8_t ADSRchangesMode = 0;
 
 struct ADSRparam {
   const char* name;
@@ -288,6 +291,7 @@ const uint8_t TABLE_SIZE_COUNT = sizeof(TABLE_SIZE_VALUES) / sizeof(TABLE_SIZE_V
 const char* DURATION_NAMES[] = {"F","SC","SC*","C","C*","N","N*","B","B*","R"};
 const float DURATION_PRESETS[] = {0.125f,0.25f,0.375f,0.5f,0.75f,1.0f,1.5f,2.0f,3.0f,4.0f};
 const char* MODE_FILE_NAMES[] = {"SOUND", "SEQ", "C.ARP"};
+const char* ADSR_MODE_NAMES[] = {"A = B", "A<=>B", "RESET", "B = A", "B<=>A", "RESET"};
 
 enum EnvState : uint8_t {ENV_IDLE = 0, ENV_DELAY, ENV_ATTACK, ENV_DECAY, ENV_SUSTAIN, ENV_RELEASE}; 
 enum LfoWaveform : uint8_t {LFO_SINE = 0, LFO_TRIANGLE, LFO_SAW, LFO_SQUARE, LFO_PULSE,LFO_SAMPHOLD, LFO_CHAOS, LFO_WAVE_COUNT};
@@ -456,7 +460,7 @@ Param arpCustom[MAX_CUSTOM_PARAM] = {
 
 struct StoredCustomArp {
   int8_t pattern[C_ARP_MAX_STEPS];
-  decltype(arpCustom[0].value) values[5]; // Guarda los valores de arpCustom[2] a arpCustom[6]
+  int values[5]; // Guarda los valores de arpCustom[2] a arpCustom[6]
 };
 
 uint8_t customArpEditStep = 0;          // Paso actual siendo editado (0-7)   
@@ -573,12 +577,10 @@ bool suppressUiRefresh = false;
 
 struct StoredPreset {
   char name[PN_LEN + 1];
-  float values[MAIN_PARAM_PAGES][PARAMS_PER_PAGE];
+  int values[MAIN_PARAM_PAGES][PARAMS_PER_PAGE];
   int oscAdsr[N_OSC][TOTAL_ADSR];
   int oscMix[2];
 };
-
-
 
 void endFeedbackPreset(uint32_t time = 2000);
 void drawSqrBots( const char* txt, const char* am, const char* az, int y = 128);

@@ -449,23 +449,38 @@ void captureSequencerStepFromMidi(uint8_t velocity) {
       seqStep.melodyCount = 0;
       lastMelodyEditStep = step;
     }
+    // 1. Calcular la duración acumulada actual en el paso
+    float currentTotalDuration = 0.0f;
+    for (uint8_t i = 0; i < seqStep.melodyCount; i++) {
+      currentTotalDuration += seqStep.melodyDurations[i];
+    }
+    // 2. Calcular la capacidad máxima del paso en tiempos (4.0f por cada bar)
+    const float MAX_PATTERN_DURATION = 4.0f;
+    float newNoteDuration = DURATION_PRESETS[selectedDurationIdx];
 
-    // Si aún hay espacio en el buffer (máximo 16 notas)
+    // 3. Comprobar límite de buffer y límite de tiempo disponible
     if (seqStep.melodyCount < MAX_MELODY_NOTES) {
-      uint8_t idx = seqStep.melodyCount;
-      
-      seqStep.melodyNotes[idx]      = held[0]; // Capturamos la primera nota presionada
-      seqStep.melodyVelocities[idx] = (int)velocity;
-      seqStep.melodyDurations[idx]  = DURATION_PRESETS[selectedDurationIdx];   // Duración seleccionada
-      if(sequencerState == SEQ_STATE_REC) Serial.printf("%d = N:%d, V:%d, D:%1.3f, Prst:%d\n", seqStep.melodyCount,
-          seqStep.melodyNotes[idx],seqStep.melodyVelocities[idx],seqStep.melodyDurations[idx],selectedDurationIdx);
-      seqStep.melodyCount++; // Incrementamos el total de notas de este paso
+      if (currentTotalDuration + newNoteDuration <= MAX_PATTERN_DURATION + 0.001f) {
+        uint8_t idx = seqStep.melodyCount;
+        
+        seqStep.melodyNotes[idx]      = held[0];
+        seqStep.melodyVelocities[idx] = (int)velocity;
+        seqStep.melodyDurations[idx]  = newNoteDuration;
+
+        if (sequencerState == SEQ_STATE_REC) {
+          Serial.printf("%d = N:%d, V:%d, D:%s\n", 
+            seqStep.melodyCount, seqStep.melodyNotes[idx], seqStep.melodyVelocities[idx],
+            DURATION_NAMES[selectedDurationIdx]);
+        }
+
+        seqStep.melodyCount++;
+      } else {
+        Serial.println("Paso lleno: No cabe más duración en este compás");
+      }
     }
 
     // Actualizar la pantalla del sintetizador
     if (!suppressUiRefresh && currentPage == PAGE_SEQ) {
-      drawValue(3); // Muestra la última nota ingresada
-      drawValue(6); // Muestra la velocidad
       drawExtraValue();
       drawMelody(step);
     }

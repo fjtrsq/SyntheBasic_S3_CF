@@ -16,6 +16,7 @@ int getParamValue(Page page, uint8_t param) {
     return ADSRmixValues[param - TOTAL_ADSR];
   }
   else if(page == PAGE_ARP && customArpEditorState == CUSTOM_ARP_EDIT) return arpCustom[param].value;
+    
   else return pageParam[page][param].value;
 }
 
@@ -37,6 +38,16 @@ const char* getNameValue (uint8_t param, int value){ // page * PARAMS_PER_PAGE +
     case 53:  return ARP_HOLD_NAMES[value]; break;
     default:  return "ERROR"; break;
   }
+}
+
+const char* getDurationName(float dur) {
+  uint8_t count = sizeof(DURATION_PRESETS) / sizeof(DURATION_PRESETS[0]);
+  for (uint8_t i = 0; i < count; i++) {
+    if (fabs(dur - DURATION_PRESETS[i]) < 0.01f) {
+      return DURATION_NAMES[i];
+    }
+  }
+  return "?"; // Por si la duración no coincide con ningún preset
 }
 
 void processEncoders() {
@@ -127,7 +138,15 @@ void applyPageDefaultsToggle(Page page, const int defaults[PARAMS_PER_PAGE], int
   applyingPageDefaultsToggle = false;
 }
 
+void cancelADSRDefaultState(uint8_t osc) {
+  if (adsrUsingDefaults[osc]) {
+    adsrUsingDefaults[osc] = false;
+  }
+}
+
 void toggleADSRDefaults(uint8_t osc) {
+  ADSRchangesActive = false;
+  ADSRchangesMode = 0;
   if (!adsrUsingDefaults[osc]) {
     // Guardar los valores actuales editados y cargar los valores por defecto
     for (uint8_t i = 0; i < TOTAL_ADSR; i++) {
@@ -147,8 +166,29 @@ void toggleADSRDefaults(uint8_t osc) {
   }
 
   // Redibujar la pantalla o la sección ADSR para ver los cambios inmediatamente
+  updateEnvelopeRates(osc);
   drawMainVisualization(); 
 }
+
+/*void resetADSR(uint8_t osc){
+  adsrUsingDefaults[osc] = !adsrUsingDefaults[osc];
+  if(adsrUsingDefaults[osc]){
+    for(byte i=0;i<TOTAL_ADSR;i++){
+      ADSRedited[osc][i] = ADSRvalues[osc][i];
+      ADSRvalues[osc][i] = ADSR_DEFAULTS[osc][i];
+      drawValue(i);
+    }
+    adsrUsingDefaults[osc] = true;
+  } else{
+    for(byte i=0;i<TOTAL_ADSR;i++){
+      ADSRvalues[osc][i] = ADSRedited[osc][i];
+      drawValue(i);
+    }
+    adsrUsingDefaults[osc] = false;
+  }
+  updateEnvelopeRates(osc);
+  drawMainVisualization();
+}*/
 
 void refreshValue(Page page, uint8_t param , int dirAcc){
   uint16_t color = 0;
@@ -203,22 +243,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 drawExtraValue();
                 break;
               }
-      /*case 7: { MemoryMode selectedMode = (value > 0.5f) ? MEMORY_INTERNAL : MEMORY_PSRAM;
-                bool changed = selectedMode != memoryMode;
-                bool saved = !changed;
-                if (changed) {
-                  saved = saveMemoryModeToNvs(selectedMode);
-                  
-                  Serial.printf("[NVS] Cambio modo memoria -> %s (%s)\n",
-                                selectedMode == MEMORY_INTERNAL ? "RAM interna primero" : "AUTO (PSRAM primero)",
-                                saved ? "guardado, requiere reset HW" : "error NVS");
-                }
-                pageParam[0][7].value = (memoryMode == MEMORY_INTERNAL) ? 1 : 0;
-                if(changed && saved) bitSet(confFlagRed,parametroRaw);
-                else bitClear(confFlagRed, parametroRaw);
-                drawExtraValue();
-                break;
-              } */
+      
       case 7:  pitchBendRangeSemis = value; break;
           
     //pagina 2 LFO currentPage = 1
@@ -357,6 +382,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
               } else {
                 sequencerSteps[sequencerEditStep].root = value;
               }
+              break;
       case 44: sequencerSteps[sequencerEditStep].chord = (ChordType)value;
                 if (sequencerSteps[sequencerEditStep].chord != CHORD_PLAYED) sequencerSteps[sequencerEditStep].playedCount = 0;
                 break;
@@ -368,6 +394,8 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
                 if (sequencerSteps[sequencerEditStep].melodyCount > 0) {
                   uint8_t lastNoteIdx = sequencerSteps[sequencerEditStep].melodyCount - 1;
                   sequencerSteps[sequencerEditStep].melodyDurations[lastNoteIdx] = DURATION_PRESETS[selectedDurationIdx];
+                  drawMelody(sequencerEditStep);
+                  drawExtraValue();
                 }
                 break;
 
@@ -492,7 +520,7 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
 
   }
 
-    //pagina 9 ADSR currentPage = 8
+  //pagina 9 ADSR currentPage = 8
   else if(page == PAGE_ADSR) { 
     if (param < TOTAL_ADSR) {
       ADSRvalues[oscSelect][param] = constrain(ADSRvalues[oscSelect][param] + dirAcc,
@@ -529,26 +557,6 @@ void refreshValue(Page page, uint8_t param , int dirAcc){
       drawMainVisualization();
     }
   }
-}
-
-void resetADSR(uint8_t osc){
-  adsrUsingDefaults[osc] = !adsrUsingDefaults[osc];
-  if(adsrUsingDefaults[osc]){
-    for(byte i=0;i<TOTAL_ADSR;i++){
-      ADSRedited[osc][i] = ADSRvalues[osc][i];
-      ADSRvalues[osc][i] = ADSR_DEFAULTS[osc][i];
-      drawValue(i);
-    }
-    adsrUsingDefaults[osc] = true;
-  } else{
-    for(byte i=0;i<TOTAL_ADSR;i++){
-      ADSRvalues[osc][i] = ADSRedited[osc][i];
-      drawValue(i);
-    }
-    adsrUsingDefaults[osc] = false;
-  }
-  updateEnvelopeRates(osc);
-  drawMainVisualization();
 }
 
 void setPage(Page page){ // & Button Page
@@ -674,6 +682,10 @@ void processControl(){
         case PAGE_SEQ:
           sequencerTransitionMode = (SeqTransitionMode)constrain((int)sequencerTransitionMode + enc, 0, SEQ_TRANS_COUNT - 1);
         break;
+
+        case PAGE_ARP:
+          return;
+        break;
         
       }
 
@@ -713,6 +725,97 @@ void botonEncoder(){
     
 }
 
+void startADSRSequence() {
+  for (uint8_t osc = 0; osc < N_OSC; osc++) {
+    for (uint8_t i = 0; i < TOTAL_ADSR; i++) {
+      ADSRchangesBackup[osc][i] = ADSRvalues[osc][i];
+    }
+  }
+
+  ADSRchangesActive = true;
+  ADSRchangesMode = 0;
+}
+
+void executeADSRSequence(uint8_t osc) {
+
+  uint8_t otherOsc = (osc == 0) ? 1 : 0;
+
+  // Si es la primera operación, hacemos el backup
+  if (!ADSRchangesActive) {
+    startADSRSequence();
+  }
+
+  switch (ADSRchangesMode) {
+    // --------------------------------
+    // 0 - OSC seleccionado = OTRO
+    // --------------------------------
+    case 0:
+
+      for (uint8_t i = 0; i < TOTAL_ADSR; i++) {
+        ADSRvalues[osc][i] = ADSRvalues[otherOsc][i];
+        ADSRedited[osc][i] = ADSRvalues[osc][i];
+      }
+      cancelADSRDefaultState(osc);
+
+      Serial.printf("Osc %d = Osc %d\n", osc, otherOsc);
+
+      break;
+
+
+    // --------------------------------
+    // 1 - INTERCAMBIAR A <-> B
+    // --------------------------------
+    case 1:
+
+      // Usamos el estado ORIGINAL guardado
+      // para evitar el problema A=B -> A=B
+      for (uint8_t i = 0; i < TOTAL_ADSR; i++) {
+        ADSRvalues[0][i] = ADSRchangesBackup[1][i];
+        ADSRvalues[1][i] = ADSRchangesBackup[0][i];
+        ADSRedited[0][i] = ADSRvalues[0][i];
+        ADSRedited[1][i] = ADSRvalues[1][i];
+      }
+
+      cancelADSRDefaultState(0);
+      cancelADSRDefaultState(1);
+
+      Serial.println("ADSR A <-> B");
+
+      break;
+
+
+    // --------------------------------
+    // 2 - RECUPERAR
+    // --------------------------------
+    case 2:
+
+      for (uint8_t osc2 = 0; osc2 < N_OSC; osc2++) {
+
+        for (uint8_t i = 0; i < TOTAL_ADSR; i++) {
+          ADSRvalues[osc2][i] = ADSRchangesBackup[osc2][i];
+          ADSRedited[osc2][i] = ADSRvalues[osc2][i];
+        }
+        cancelADSRDefaultState(osc2);
+      }
+
+      Serial.println("ADSR sequence RESTORE");
+
+      // Terminamos la secuencia
+      ADSRchangesActive = false;
+      ADSRchangesMode = 0;
+
+      drawMainVisualization();
+      return;
+  }
+
+  
+  // Pasamos a la siguiente operación
+  
+  ADSRchangesMode = (ADSRchangesMode + 1) % 3;
+  drawMainVisualization();
+  
+}
+
 void botonAmarillo(){
   if(botAm.singleClick()){
     if(currentPage == PAGE_SEQ){
@@ -726,12 +829,24 @@ void botonAmarillo(){
     }
     
 
-    else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
+    else if (currentPage == PAGE_ADSR || currentPage == PAGE_MORPH) {
+      // CAMBIO DE OSCILADOR
       if (oscSelect != 0) {
+
         oscSelect = 0;
+
+        // Cambiar de oscilador interrumpe
+        // completamente la secuencia
+        ADSRchangesActive = false;
+        ADSRchangesMode = 0;
+
         drawMainVisualization();
       }
-      else toggleADSRDefaults(0);
+
+      // OSCILADOR A YA SELECCIONADO
+      else {
+        executeADSRSequence(0);
+      }
     }
 
     else if(currentPage == PAGE_FILE){
@@ -753,6 +868,9 @@ void botonAmarillo(){
       resetPitchBend();
       resetAfterChannel();
     }
+    else if(currentPage == PAGE_ADSR){
+      toggleADSRDefaults(0);
+    }
   }
 }
 
@@ -772,12 +890,37 @@ void botonAzul(){
       saveMidiMappingsToFS();
     }
     
-    else if(currentPage == PAGE_ADSR || currentPage == PAGE_MORPH){
-      if(oscSelect != 1){  
+    else if (currentPage == PAGE_ADSR || currentPage == PAGE_MORPH) {
+      // CAMBIO DE OSCILADOR
+      if (oscSelect != 1) {
+
         oscSelect = 1;
+
+        // Cambiar de oscilador interrumpe
+        // completamente la secuencia
+        ADSRchangesActive = false;
+        ADSRchangesMode = 0;
+
         drawMainVisualization();
       }
-      else toggleADSRDefaults(1);
+
+      // OSCILADOR A YA SELECCIONADO
+      else {
+        executeADSRSequence(0);
+      }
+    }
+
+    else if(currentPage == PAGE_SEQ){
+      uint8_t step = sequencerEditStep & 0xF;
+      SequencerStep &seqStep = sequencerSteps[step];
+      if(sequencerState == SEQ_STATE_REC && seqStep.mode == SEQ_MODE_MELODY && seqStep.melodyCount > 0){
+        seqStep.melodyCount--;
+        seqStep.melodyNotes[seqStep.melodyCount] = 0;
+        seqStep.melodyVelocities[seqStep.melodyCount] = 0;
+        seqStep.melodyDurations[seqStep.melodyCount] = 0.0f;
+        drawMelody(step);
+        drawExtraValue();
+      }
     }
 
   }
@@ -796,6 +939,9 @@ void botonAzul(){
       bool ok = presetDeleteByName(presetEditName);
       Serial.printf("Delete preset %s -> %s\n", presetEditName, ok ? "OK" : "FAIL");
       refreshPresetFileList(false);
+    }
+    else if(currentPage == PAGE_ADSR){
+      toggleADSRDefaults(1);
     }
   }
 }
@@ -898,14 +1044,23 @@ void drawExtraValue(){
       //snprintf(buf, sizeof(buf), "%s I%d", CHORD_TYPE_NAMES[(int)chordType], chordInversion);
       break;
     case PAGE_SEQ: {
-      uint8_t currentStepIdx;
-      if (sequencerState == SEQ_STATE_ON) {
-        currentStepIdx = sequencerPlayStep & 0xF;
-      } else {
-        currentStepIdx = sequencerEditStep & 0xF;
+      uint8_t step;
+      if (sequencerState == SEQ_STATE_ON) step = sequencerPlayStep & 0xF;
+      else step = sequencerEditStep & 0xF;
+      SequencerStep &seqStep = sequencerSteps[step];
+      if(sequencerState == SEQ_STATE_REC){
+        if (seqStep.mode == SEQ_MODE_MELODY && seqStep.melodyCount > 0) {
+          uint8_t lastIdx = seqStep.melodyCount - 1;
+          uint8_t lastNote = seqStep.melodyNotes[lastIdx];
+          uint8_t lastVel = seqStep.melodyVelocities[lastIdx];
+          float dur      = seqStep.melodyDurations[lastIdx];
+          snprintf(buf, sizeof(buf), "N:%d V:%d D:%s", lastNote, lastVel, getDurationName(dur));
+        } 
       }
-      snprintf(buf, sizeof(buf), "%s S%d B%d %s", SEQ_TRANSITION_NAMES[(int)sequencerTransitionMode], currentStepIdx + 1, 
-      sequencerPlayBar, sequencerSteps[currentStepIdx].layerChord ? "CHD" : "");
+      else {
+        snprintf(buf, sizeof(buf), "%s S%d B%d %s", SEQ_TRANSITION_NAMES[(int)sequencerTransitionMode], step + 1, 
+          sequencerPlayBar, seqStep.layerChord ? "CHD" : "");
+      }
       break;
     }
     case PAGE_ARP: 
@@ -1308,7 +1463,7 @@ void  drawMainVisualization(){
       drawWaveAudioIcon(oscWaveform[0], 255, 175, oscSelect ? TFT_DARKGREY : TFT_YELLOW);
       drawWaveAudioIcon(oscWaveform[1], 255, 217, oscSelect ? TFT_CYAN : TFT_DARKGREY);
       drawExtraValue();
-      drawSqrBots("RSET", "A","B");
+      drawSqrBots(ADSR_MODE_NAMES[ADSRchangesMode + (oscSelect * 3)], "A","B");
       leds.setColor(9, color);
       colorAnt = color;
 
@@ -1378,7 +1533,7 @@ void redrawParam(uint8_t p, const Param& param){
   tft.setFreeFont(LAB_TEXT);
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(TFT_GREEN);
-  tft.fillRect((p&3)*80, 5 + ((p>>2)*60), 80, 10, TFT_BLACK);
+  tft.fillRect((p&3)*80, 5 + ((p>>2)*60), 80, 12, TFT_BLACK);
   pageParam[currentPage][p] = param;
   tft.drawString(getParamName(currentPage, p), 40 + ((p&3)*80), 5 + ((p>>2)*60));
   drawValue(p);
